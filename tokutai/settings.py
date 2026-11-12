@@ -19,6 +19,14 @@ class Settings:
     warn_defect_days: int = 7
     manager_emails: list[str] = field(default_factory=lambda: ["", ""])
     notify_enabled: bool = True
+    insurer_email: str = ""  # 書類未着の催促メールの宛先（保険会社）。空なら催促機能は動かない
+    remind_days: int = 7  # 催促の間隔（案件作成日からの営業日）
+    remind_subject: str = "【特退金脱退】書類未着のご確認（{count}件）"  # {count} は案件の件数に置き換わる
+    remind_intro: str = (  # 本文の冒頭。このあとに案件の一覧が自動で入る
+        "お世話になっております。\n\n"
+        "下記の案件について、案件作成日から日数がたちましたが、書類をまだ確認できておりません。\n"
+        "お手数ですが、状況のご確認をお願いいたします。")
+    remind_outro: str = ""  # 本文の末尾（案件の一覧のあと）。署名などを入れる
     sync_minutes: int = 30
     initial_days: int = 60
     autostart: bool = True
@@ -30,6 +38,11 @@ class Settings:
 
     def managers(self) -> list[str]:
         return [m.strip() for m in self.manager_emails if m and m.strip()]
+
+    def insurer_emails(self) -> list[str]:
+        """保険会社の宛先。「;」「,」や空白で区切って複数入れてもよい。"""
+        import re
+        return [m for m in re.split(r"[;,\s]+", self.insurer_email) if m]
 
     def is_connectable(self) -> bool:
         return bool(self.tenant_id.strip() and self.client_id.strip() and self.folder_name.strip())

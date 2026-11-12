@@ -9,8 +9,8 @@ from PySide6.QtCore import QDate, QItemSelectionModel, QObject, QRunnable, Qt, Q
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
-    QFileDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox, QPushButton,
-    QSystemTrayIcon, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QFileDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
+    QMenu, QMessageBox, QPlainTextEdit, QPushButton, QSystemTrayIcon, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 from sqlalchemy import select
 
@@ -140,6 +140,66 @@ class AddCaseDialog(QDialog):
         form.addRow(bb)
 
 
+class ReminderDialog(QDialog):
+    """保険会社への催促メールを、送る前に確認するダイアログ。"""
+
+    SEND, SKIP = "send", "skip"
+
+    def __init__(self, reminders: list[service.Reminder], to: list[str], st, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("保険会社へ催促メールを送りますか？")
+        self.resize(720, 560)
+        self.st = st
+        self.action: str | None = None  # 「後で」や×で閉じたときは None（記録せず、次の機会に再確認）
+        self.reminders = reminders
+
+        v = QVBoxLayout(self)
+        v.addWidget(QLabel(f"書類が未着の案件です。送る案件にチェックを入れてください。\n宛先: {', '.join(to)}"))
+        self.list = QListWidget()
+        for r in reminders:
+            it = QListWidgetItem(f"{r.case_no}　{r.company or '（会社名なし）'}　案件作成日 {r.received_date:%Y-%m-%d}　{r.days}営業日")
+            it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            it.setCheckState(Qt.CheckState.Checked)
+            self.list.addItem(it)
+        self.list.itemChanged.connect(self._refresh)
+        v.addWidget(self.list, 1)
+        self.preview = QPlainTextEdit()
+        self.preview.setReadOnly(True)
+        v.addWidget(self.preview, 1)
+
+        row = QHBoxLayout()
+        self.btn_send = QPushButton("送信")
+        self.btn_send.clicked.connect(lambda: self._done(self.SEND))
+        btn_skip = QPushButton("今回は送らない")
+        btn_skip.clicked.connect(lambda: self._done(self.SKIP))
+        btn_later = QPushButton("後で")
+        btn_later.clicked.connect(self.reject)
+        row.addStretch()
+        for b in (self.btn_send, btn_skip, btn_later):
+            row.addWidget(b)
+        v.addLayout(row)
+        self._refresh()
+
+    def checked(self) -> list[service.Reminder]:
+        return [r for i, r in enumerate(self.reminders) if self.list.item(i).checkState() == Qt.CheckState.Checked]
+
+    def unchecked(self) -> list[service.Reminder]:
+        return [r for r in self.reminders if r not in self.checked()]
+
+    def _refresh(self, *_args) -> None:
+        sel = self.checked()
+        self.btn_send.setEnabled(bool(sel))
+        if sel:
+            subject, body = service.build_reminder_mail(sel, self.st)
+            self.preview.setPlainText(f"件名: {subject}\n\n{body}")
+        else:
+            self.preview.setPlainText("送る案件が選ばれていません。")
+
+    def _done(self, action: str) -> None:
+        self.action = action
+        self.accept()
+
+
 class MainWindow(QMainWindow):
     def __init__(self, start_minimized: bool = False):
         super().__init__()
@@ -155,6 +215,7 @@ class MainWindow(QMainWindow):
         self._running = False
         self._alert_count = 0
         self._last_error: list[str] = []
+        self._reminder_open = False  # 催促メールの確認ダイアログを開いている間
         self._auth_required = False  # サインイン切れ中
         self._auth_dialog_date: date | None = None  # サインイン切れのダイアログを出した日（1日1回）
         self._totals = {"new": 0, "done": 0, "notified": 0}
@@ -434,6 +495,8 @@ class MainWindow(QMainWindow):
         if new and (self._first_check or True):
             self.tray.showMessage("特退金脱退 警告", f"新しい警告が{len(new)}件あります。",
                                   QSystemTrayIcon.MessageIcon.Warning, 8000)
+            if not self.isVisible() or self.isMinimized():  # トレイ常駐中は、画面を前面に出して気づかせる
+                self.show_front()
         self._known_alerts = keys
         self._first_check = False
 
@@ -489,6 +552,36 @@ class MainWindow(QMainWindow):
             self.tray.showMessage("特退金脱退 エラー", res.errors[0], QSystemTrayIcon.MessageIcon.Critical, 8000)
         self.reload()
         self._notify_auth_required()
+        self._ask_reminders()
+
+    def _ask_reminders(self) -> None:
+        """書類未着の催促メールの候補があれば、送る前に確認する。送信は、確認で「送信」を押したときだけ。"""
+        if self._reminder_open or self._auth_required:
+            return
+        today = date.today()
+        with db.session() as s:
+            cands = service.collect_reminders(s, self.st, today)
+        if not cands:
+            return
+        self._reminder_open = True  # ダイアログを開いている間に次の取り込みが来ても、重ねて開かない
+        try:
+            self.show_front()
+            dlg = ReminderDialog(cands, self.st.insurer_emails(), self.st, self)
+            if not dlg.exec() or dlg.action is None:
+                return
+            send = dlg.checked() if dlg.action == ReminderDialog.SEND else []
+            skip = [r for r in cands if r not in send]
+            try:
+                with self._lock, db.session() as s:
+                    service.send_reminders(s, self.st, self._get_client(), send, skip, today)
+            except Exception as e:  # noqa: BLE001
+                log.exception("保険会社への催促メールの送信に失敗")
+                QMessageBox.critical(self, "催促メール", f"送信できませんでした。次の機会に、もう一度確認します。\n{e}")
+                return
+            if send:
+                self.statusBar().showMessage(f"保険会社へ催促メールを送信しました（{len(send)}件）。", 8000)
+        finally:
+            self._reminder_open = False
 
     def _notify_auth_required(self) -> None:
         """サインイン切れを検知した日に1回、画面を前面に出して案内する。"""

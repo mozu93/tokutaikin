@@ -396,6 +396,73 @@ def notify_managers(s: Session, st: Settings, sender, today: date, res: SyncResu
     log.info("管理職へ通知: %d件 -> %s", len(pending), ",".join(to))
 
 
+# ---------- 保険会社への催促（書類未着） ----------
+KIND_REMIND_SENT = "ins_sent"  # 送信済。通知ログの種類は「ins_sent_<何営業日目>」の形で、区切りごとに記録する
+KIND_REMIND_SKIP = "ins_skip"  # 「今回は送らない」を選んだもの
+
+
+@dataclass(frozen=True)
+class Reminder:
+    case_no: str
+    company: str
+    received_date: date
+    days: int  # 案件作成日からの経過営業日
+    milestone: int  # 何営業日目の区切りか（間隔が7なら 7, 14, 21…）
+
+
+def _remind_kinds(milestone: int) -> list[str]:
+    return [f"{KIND_REMIND_SENT}_{milestone}", f"{KIND_REMIND_SKIP}_{milestone}"]
+
+
+def collect_reminders(s: Session, st: Settings, today: date) -> list[Reminder]:
+    """催促メールの候補を返す。書類待ちの案件が、案件作成日から間隔（営業日）の区切りに達していて、
+    その区切りで、まだ送信も「送らない」も記録していないもの。宛先が未登録なら空。"""
+    if not st.insurer_emails():
+        return []
+    n = max(1, st.remind_days)
+    out: list[Reminder] = []
+    for c in s.scalars(select(Case)):
+        if c.status != db.STATUS_RECEIVED or c.received_date is None:
+            continue
+        days = business_days_between(c.received_date, today)
+        if days < n:
+            continue
+        milestone = days // n * n  # 長く止まっていても、直近の区切りの1通だけ
+        handled = s.scalar(select(NotifyLog).where(
+            NotifyLog.case_no == c.case_no, NotifyLog.kind.in_(_remind_kinds(milestone))))
+        if handled is None:
+            out.append(Reminder(c.case_no, c.company, c.received_date, days, milestone))
+    return sorted(out, key=lambda r: (r.received_date, r.case_no))
+
+
+def build_reminder_mail(reminders: list[Reminder], st: Settings) -> tuple[str, str]:
+    """件名と本文を作る。冒頭・末尾・件名は設定の定型文、案件の一覧は自動。"""
+    lines = []
+    if st.remind_intro.strip():
+        lines += [st.remind_intro.strip(), ""]
+    for r in reminders:
+        lines.append(f"・{r.case_no}　{r.company or '（会社名なし）'}　案件作成日 {r.received_date:%Y-%m-%d}　経過 {r.days}営業日")
+    if st.remind_outro.strip():
+        lines += ["", st.remind_outro.strip()]
+    subject = st.remind_subject.replace("{count}", str(len(reminders))).strip() or "書類未着のご確認"
+    return subject, "\n".join(lines)
+
+
+def send_reminders(s: Session, st: Settings, sender, send: list[Reminder], skip: list[Reminder],
+                   today: date) -> None:
+    """選んだ案件の催促を1通にまとめて送り、送信済と「送らない」を記録する。
+    送信に失敗したときは例外のまま何も記録しない（次の機会に、もう一度確認する）。"""
+    if send:
+        subject, body = build_reminder_mail(send, st)
+        sender.send_mail(st.insurer_emails(), subject, body, False)
+        for r in send:
+            s.add(NotifyLog(case_no=r.case_no, kind=_remind_kinds(r.milestone)[0], notified_on=today))
+        log.info("保険会社へ催促: %d件 -> %s", len(send), ",".join(st.insurer_emails()))
+    for r in skip:
+        s.add(NotifyLog(case_no=r.case_no, kind=_remind_kinds(r.milestone)[1], notified_on=today))
+    s.commit()
+
+
 def run_sync(st: Settings, client, norm: CompanyNormalizer, interactive: bool = False,
              today: date | None = None) -> SyncResult:
     """メール取り込み → 警告判定 → 管理職への通知。失敗は errors に集めて続行する。"""

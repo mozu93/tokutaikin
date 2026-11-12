@@ -124,6 +124,76 @@ def test_sync_auth_required(tmp_path, monkeypatch, norm):
     assert not r2.auth_required and r2.errors
 
 
+def test_insurer_reminders(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKUTAI_HOME", str(tmp_path))
+    db.init(f"sqlite:///{tmp_path / 't.db'}")
+    st = Settings(insurer_email="ins@example.com; ins2@example.com", remind_days=7)
+    assert st.insurer_emails() == ["ins@example.com", "ins2@example.com"]
+    with db.session() as s:
+        s.add_all([
+            db.Case(case_no="A", company="甲", received_date=date(2026, 11, 2)),  # 11/12で8営業日（書類待ち）
+            db.Case(case_no="B", company="乙", received_date=date(2026, 11, 9)),  # まだ3営業日
+            db.Case(case_no="C", company="丙", received_date=date(2026, 11, 2), docs_date=date(2026, 11, 5)),  # 書類到着
+            db.Case(case_no="D", company="丁", received_date=date(2026, 11, 2), defect_date=date(2026, 11, 6)),  # 不備
+        ])
+        s.commit()
+        today = date(2026, 11, 12)
+        c = service.collect_reminders(s, st, today)
+        assert [r.case_no for r in c] == ["A"] and c[0].milestone == 7
+        # 宛先が未登録なら動かない
+        assert service.collect_reminders(s, Settings(), today) == []
+        # 送信すると、同じ区切りでは出ない。メールは1通にまとまる
+        client = FakeClient([])
+        service.send_reminders(s, st, client, c, [], today)
+        assert len(client.sent) == 1 and client.sent[0][0] == ["ins@example.com", "ins2@example.com"]
+        assert "A" in client.sent[0][2] and "甲" in client.sent[0][2]
+        assert service.collect_reminders(s, st, date(2026, 11, 13)) == []
+        # 次の区切り（14営業日目）で、あらためて候補になる
+        assert business_days_between(date(2026, 11, 2), date(2026, 11, 24)) == 14  # 11/3・11/23は祝日
+        later = {r.case_no: r.milestone for r in service.collect_reminders(s, st, date(2026, 11, 24))}
+        assert later == {"A": 14, "B": 7}  # Bも7営業日目に達した
+
+
+def test_reminder_mail_template():
+    rs = [service.Reminder("A", "甲", date(2026, 11, 2), 8, 7), service.Reminder("B", "", date(2026, 11, 3), 7, 7)]
+    subject, body = service.build_reminder_mail(rs, Settings())  # 既定の文面
+    assert subject == "【特退金脱退】書類未着のご確認（2件）"
+    assert body.startswith("お世話になっております。") and "・A　甲　案件作成日 2026-11-02　経過 8営業日" in body
+    assert "（会社名なし）" in body
+    # 設定で文面を直すと、件名・冒頭・末尾に反映され、案件の一覧は自動で入る
+    st = Settings(remind_subject="催促 {count}件", remind_intro="冒頭です", remind_outro="署名です")
+    subject, body = service.build_reminder_mail(rs[:1], st)
+    assert subject == "催促 1件"
+    lines = body.splitlines()
+    assert lines[0] == "冒頭です" and lines[-1] == "署名です" and "・A　甲" in body
+    # 冒頭・末尾が空でも、一覧は出る
+    _, body = service.build_reminder_mail(rs[:1], Settings(remind_intro="", remind_outro=""))
+    assert body.startswith("・A　甲")
+
+
+def test_insurer_reminder_skip_and_failure(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKUTAI_HOME", str(tmp_path))
+    db.init(f"sqlite:///{tmp_path / 't.db'}")
+    st = Settings(insurer_email="ins@example.com")
+    today = date(2026, 11, 12)
+    with db.session() as s:
+        s.add(db.Case(case_no="A", company="甲", received_date=date(2026, 11, 2)))
+        s.commit()
+        c = service.collect_reminders(s, st, today)
+
+        class Failing(FakeClient):
+            def send_mail(self, *a, **k):
+                raise GraphError("送信失敗")
+
+        with pytest.raises(GraphError):  # 送信に失敗したら、何も記録しない（次回また確認する）
+            service.send_reminders(s, st, Failing([]), c, [], today)
+        assert len(service.collect_reminders(s, st, today)) == 1
+        # 「送らない」を選ぶと、メールは送らず、その区切りでは聞かない
+        client = FakeClient([])
+        service.send_reminders(s, st, client, [], c, today)
+        assert client.sent == [] and service.collect_reminders(s, st, today) == []
+
+
 def test_process_alert():
     st = Settings()
     c = db.Case(case_no="T1", received_date=date(2026, 11, 2), docs_date=date(2026, 11, 9))
