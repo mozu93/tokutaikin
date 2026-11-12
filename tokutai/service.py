@@ -22,6 +22,7 @@ ALERT_DOCS = "書類未着"
 ALERT_PROCESS = "未処理"
 ALERT_DEFECT = "補正未着"
 NOTE_UNSEEN = "受付メール未確認"
+NOTE_NO_DOCS = "書類到着日の記録なし"
 RETENTION_DAYS = 365  # 処理済の案件を残す期間
 
 
@@ -294,10 +295,13 @@ def apply_mail(s: Session, norm: CompanyNormalizer, kind: str, case_no: str, com
     elif kind == KIND_DONE:
         if c is None:
             c = Case(case_no=case_no, company="", received_date=None, done_date=recv, note=NOTE_UNSEEN)
+            _append_note(c, NOTE_NO_DOCS)
             s.add(c)
             res.done_cases += 1
         elif c.done_date is None:
             c.done_date = recv
+            if c.docs_date is None:  # 書類到着の処理を飛ばして処理済になった場合は備考に残す
+                _append_note(c, NOTE_NO_DOCS)
             res.done_cases += 1
     s.flush()
 

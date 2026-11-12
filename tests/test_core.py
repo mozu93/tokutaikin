@@ -87,7 +87,9 @@ def test_sync_flow(tmp_path, monkeypatch, norm):
     with db.session() as s:
         c1, c2, c9 = s.get(db.Case, "T1001"), s.get(db.Case, "T1002"), s.get(db.Case, "T9999")
         assert c1.company == "サンプル株式会社" and c1.status == "書類待ち"
-        assert c2.status == "処理済" and c9.note == service.NOTE_UNSEEN
+        assert c2.status == "処理済" and c2.note == service.NOTE_NO_DOCS  # 書類到着を飛ばした
+        assert service.NOTE_UNSEEN in c9.note and service.NOTE_NO_DOCS in c9.note
+        assert c1.note == ""
         assert service.alert_kind(c1, date(2026, 11, 12), st) == service.ALERT_DOCS  # 7営業日
         assert service.alert_kind(c1, date(2026, 11, 10), st) is None
     assert len(client.sent) == 1 and client.sent[0][0] == ["a@example.com", "b@example.com"]
