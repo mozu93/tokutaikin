@@ -5,6 +5,7 @@ import logging
 import sys
 from logging.handlers import RotatingFileHandler
 
+from PySide6.QtGui import QIcon
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
@@ -20,8 +21,21 @@ def setup_logging() -> None:
     logging.basicConfig(level=logging.INFO, handlers=[h])
 
 
+def set_app_identity(app: QApplication) -> None:
+    """タスクバーに、Python ではなくこのアプリのアイコンを出す。"""
+    try:  # Windows に、このアプリ専用のIDを伝える（これがないと、python.exe のアイコンになる）
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(SERVER_NAME)
+    except (AttributeError, OSError):
+        pass
+    icon = paths.app_icon_path()
+    if icon.exists():
+        app.setWindowIcon(QIcon(str(icon)))
+
+
 def main() -> int:
     app = QApplication(sys.argv)
+    set_app_identity(app)
     app.setQuitOnLastWindowClosed(False)  # トレイに常駐
     app.setStyleSheet(
         "* { font-size: 13pt; }"

@@ -50,6 +50,14 @@ def bundled_abbr_path() -> Path:
     return base / "data" / "corporate_abbr.csv"
 
 
+def app_icon_path() -> Path:
+    """アプリのアイコン（exe 化したときも、同梱のデータから探す）。"""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    if hasattr(sys, "_MEIPASS"):
+        return base / "tokutai" / "data" / "app.ico"
+    return base / "data" / "app.ico"
+
+
 def ensure_abbr_file() -> Path:
     """法人略称表を利用者フォルダにコピーする（後から編集できるようにするため）。"""
     dst = abbr_path()

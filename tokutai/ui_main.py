@@ -322,7 +322,10 @@ class MainWindow(QMainWindow):
 
     def _build_tray(self) -> None:
         self.icon_ok, self.icon_warn = _icon("#2e9e4f"), _icon("#d62f2f")
-        self.setWindowIcon(self.icon_ok)
+        if paths.app_icon_path().exists():  # ウィンドウ・タスクバーはアプリのアイコン、トレイは状態の色の丸
+            self.setWindowIcon(QIcon(str(paths.app_icon_path())))
+        else:
+            self.setWindowIcon(self.icon_ok)
         self.tray = QSystemTrayIcon(self.icon_ok, self)
         menu = QMenu()
         a_open = QAction("開く", self); a_open.triggered.connect(self.show_front)
