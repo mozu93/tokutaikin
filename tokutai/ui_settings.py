@@ -37,18 +37,18 @@ class SettingsDialog(QDialog):
         self.mgr2 = QLineEdit(s.manager_emails[1])
         self.notify = QCheckBox("管理職へ警告メールを自動送信する"); self.notify.setChecked(s.notify_enabled)
         self.insurer = QLineEdit(s.insurer_email)
-        self.insurer.setPlaceholderText("空欄なら催促メール機能は使いません（複数は ; 区切り）")
+        self.insurer.setPlaceholderText("空欄なら催促は使いません（複数は ; 区切り）")
         self.remind = NoWheelSpinBox(); self.remind.setRange(1, 60); self.remind.setSuffix(" 営業日ごと"); self.remind.setValue(s.remind_days)
         self.r_subject = QLineEdit(s.remind_subject)
         self.r_subject.setToolTip("{count} は、案件の件数に置き換わります。")
-        self.r_intro = QPlainTextEdit(s.remind_intro); self.r_intro.setFixedHeight(120)
-        self.r_outro = QPlainTextEdit(s.remind_outro); self.r_outro.setFixedHeight(90)
+        self.r_intro = QPlainTextEdit(s.remind_intro); self.r_intro.setFixedHeight(170)
+        self.r_outro = QPlainTextEdit(s.remind_outro); self.r_outro.setFixedHeight(110)
         self.r_outro.setPlaceholderText("署名など（空欄でもかまいません）")
         self.sync_min = NoWheelSpinBox(); self.sync_min.setRange(5, 720); self.sync_min.setSuffix(" 分"); self.sync_min.setValue(s.sync_minutes)
         self.init_days = NoWheelSpinBox(); self.init_days.setRange(1, 365); self.init_days.setSuffix(" 日"); self.init_days.setValue(s.initial_days)
         self.auto = QCheckBox("Windows起動時に自動で起動する"); self.auto.setChecked(s.autostart)
 
-        self.resize(560, 600)  # 小さいノートPCでも収まるよう、内容は縦スクロールにする
+        self.resize(740, 600)  # 小さいノートPCでも収まるよう、内容は縦スクロールにする（幅780・高さ600以内）
         root = QVBoxLayout(self)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
