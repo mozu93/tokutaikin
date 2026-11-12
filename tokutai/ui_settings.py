@@ -47,6 +47,7 @@ class SettingsDialog(QDialog):
         self.sync_min = NoWheelSpinBox(); self.sync_min.setRange(5, 720); self.sync_min.setSuffix(" 分"); self.sync_min.setValue(s.sync_minutes)
         self.init_days = NoWheelSpinBox(); self.init_days.setRange(1, 365); self.init_days.setSuffix(" 日"); self.init_days.setValue(s.initial_days)
         self.auto = QCheckBox("Windows起動時に自動で起動する"); self.auto.setChecked(s.autostart)
+        self.upd = QCheckBox("新しい版を自動で確認する"); self.upd.setChecked(s.check_updates)
 
         self.resize(740, 600)  # 小さいノートPCでも収まるよう、内容は縦スクロールにする（幅780・高さ600以内）
         root = QVBoxLayout(self)
@@ -66,7 +67,7 @@ class SettingsDialog(QDialog):
             ("保険会社への催促（書類未着）", [("保険会社の宛先", self.insurer), ("催促の間隔", self.remind)]),
             ("催促メールの文面（案件の一覧は自動で入ります）",
              [("件名（{count}=件数）", self.r_subject), ("本文の冒頭", self.r_intro), ("本文の末尾", self.r_outro)]),
-            ("動作", [("同期の間隔", self.sync_min), ("初回の取り込み範囲", self.init_days), ("", self.auto)]),
+            ("動作", [("同期の間隔", self.sync_min), ("初回の取り込み範囲", self.init_days), ("", self.auto), ("", self.upd)]),
         ):
             box = QGroupBox(title)
             form = QFormLayout(box)
@@ -104,6 +105,7 @@ class SettingsDialog(QDialog):
         s.notify_enabled = self.notify.isChecked()
         s.sync_minutes, s.initial_days = self.sync_min.value(), self.init_days.value()
         s.autostart = self.auto.isChecked()
+        s.check_updates = self.upd.isChecked()
         try:
             autostart.set_enabled(s.autostart)
         except Exception as e:  # noqa: BLE001

@@ -8,4 +8,5 @@ token_cache.bin
 backup/
 build/
 dist/
+installer/Output/
 *.spec

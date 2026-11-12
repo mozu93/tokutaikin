@@ -31,6 +31,7 @@ class Settings:
     initial_days: int = 60
     autostart: bool = True
     autostart_initialized: bool = False
+    check_updates: bool = True  # 新しい版を、起動時と1日1回、自動で確認する
     view_filter: str = "未完了のみ"  # 一覧の絞り込み（再起動後も覚える）
     sort_column: str = ""  # 並び替えの列名。空は標準の順
     sort_ascending: bool = True

@@ -1,0 +1,86 @@
+name: release
+
+# タグ（v1.1.0 など）を push すると、テストを実行し、Windows 用のインストーラーを作って、GitHub の Release に添付する。
+# 添付するのは、TokutaiApp-Setup-<版>.exe と、その SHA-256 の値（.sha256）。アプリの自動更新は、この2つを使う。
+# 手動実行（workflow_dispatch）では、ビルドだけを行い、成果物を Actions に14日間残す（Release は触らない）。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # Release の作成・ファイルの添付に必要
+
+jobs:
+  build:
+    runs-on: windows-latest  # 消費時間が2倍に数えられるため、リリースは、修正をまとめて1回にする
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 依存関係のインストール
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: 版の確認（タグと tokutai/__init__.py の版が一致していること）
+        shell: pwsh
+        run: |
+          $ver = python -c "from tokutai import __version__; print(__version__)"
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$ver") {
+            throw "タグ $env:GITHUB_REF_NAME と、tokutai/__init__.py の版 $ver が一致しません。"
+          }
+          "VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: テスト
+        run: python -m pytest tests -q
+
+      - name: exe のビルド（PySide6 のライセンス条件のため、1ファイルではなくフォルダ形式）
+        run: pyinstaller --noconsole --onedir --name TokutaiApp --icon tokutai/data/app.ico --add-data "tokutai/data;tokutai/data" main.py
+
+      - name: 文書とライセンスを同梱
+        shell: pwsh
+        run: Copy-Item LICENSE, README.md, MANUAL.md, RELEASE_NOTES.md dist/TokutaiApp/
+
+      - name: インストーラーの作成（Inno Setup）
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:VERSION" installer\TokutaiApp.iss
+          if ($LASTEXITCODE -ne 0) { throw "インストーラーの作成に失敗しました。" }
+
+      - name: SHA-256 の値を作成（アプリが、更新のときに照合する）
+        shell: pwsh
+        run: |
+          $name = "TokutaiApp-Setup-$env:VERSION.exe"
+          $hash = (Get-FileHash "installer/Output/$name" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name" | Out-File -FilePath "installer/Output/$name.sha256" -Encoding ascii
+          Get-Content "installer/Output/$name.sha256"
+
+      - name: 成果物として保存（確認用）
+        uses: actions/upload-artifact@v4
+        with:
+          name: TokutaiApp-Setup-${{ env.VERSION }}
+          path: installer/Output/TokutaiApp-Setup-${{ env.VERSION }}.exe*
+          retention-days: 14
+
+      - name: Release に添付（タグのときだけ）
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = @("installer/Output/TokutaiApp-Setup-$env:VERSION.exe", "installer/Output/TokutaiApp-Setup-$env:VERSION.exe.sha256")
+          gh release view $env:GITHUB_REF_NAME *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:GITHUB_REF_NAME $files --clobber
+          } else {
+            # RELEASE_NOTES.md の、この版の節を、Release の説明にする
+            $t = Get-Content RELEASE_NOTES.md -Raw -Encoding utf8
+            $m = [regex]::Match($t, "(?s)## v$([regex]::Escape($env:VERSION))[^\n]*\n(.*?)(?=\n## v|\z)")
+            $body = if ($m.Success) { $m.Groups[1].Value.Trim() } else { "変更点は RELEASE_NOTES.md を参照してください。" }
+            Set-Content -Path notes.md -Value $body -Encoding utf8
+            gh release create $env:GITHUB_REF_NAME $files --title $env:GITHUB_REF_NAME --notes-file notes.md
+          }

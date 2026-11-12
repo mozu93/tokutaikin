@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+import tempfile
 import threading
 from datetime import date
+from pathlib import Path
 
 from PySide6.QtCore import QDate, QItemSelectionModel, QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
@@ -14,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 from sqlalchemy import select
 
-from . import db, service
+from . import __version__, db, service, updater
 from .corporate import CompanyNormalizer, load_table
 from . import paths, settings as settings_mod
 from .db import Case
@@ -200,6 +202,43 @@ class ReminderDialog(QDialog):
         self.accept()
 
 
+class UpdateDialog(QDialog):
+    """新しい版の案内。変更点を見せて、「更新する」か「後で」を選んでもらう。"""
+
+    def __init__(self, info: updater.UpdateInfo, can_install: bool, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("新しい版があります")
+        self.resize(640, 480)
+        self.install = False
+        v = QVBoxLayout(self)
+        v.addWidget(QLabel(f"新しい版 {info.version} があります（今の版: {__version__}）。\n変更点:"))
+        notes = QPlainTextEdit()
+        notes.setReadOnly(True)
+        notes.setPlainText(info.notes or "（変更点の記載はありません）")  # 外部の文章なので、書式なしで表示する
+        v.addWidget(notes, 1)
+        row = QHBoxLayout()
+        row.addStretch()
+        if can_install:
+            v.insertWidget(1, QLabel("「更新する」を押すと、アプリを終了して更新し、自動で起動し直します。"
+                                     "受付簿や設定は、そのまま引き継がれます。"))
+            go = QPushButton("更新する")
+            go.clicked.connect(self._go)
+            row.addWidget(go)
+            later = QPushButton("後で")
+            later.clicked.connect(self.reject)
+            row.addWidget(later)
+        else:
+            v.insertWidget(1, QLabel("このアプリはインストール版ではないため、自動更新は使えません。"))
+            close = QPushButton("閉じる")
+            close.clicked.connect(self.reject)
+            row.addWidget(close)
+        v.addLayout(row)
+
+    def _go(self) -> None:
+        self.install = True
+        self.accept()
+
+
 class MainWindow(QMainWindow):
     def __init__(self, start_minimized: bool = False):
         super().__init__()
@@ -215,6 +254,9 @@ class MainWindow(QMainWindow):
         self._running = False
         self._alert_count = 0
         self._last_error: list[str] = []
+        self._update: updater.UpdateInfo | None = None  # 見つかった新しい版
+        self._update_prompted: str | None = None  # 案内のダイアログを出した版（同じ版では、1回だけ）
+        self._updating = False  # 更新のインストーラーを取得している間
         self._reminder_open = False  # 催促メールの確認ダイアログを開いている間
         self._auth_required = False  # サインイン切れ中
         self._auth_dialog_date: date | None = None  # サインイン切れのダイアログを出した日（1日1回）
@@ -231,12 +273,28 @@ class MainWindow(QMainWindow):
         if not start_minimized:
             self.show_front()
         QTimer.singleShot(1500, self.sync)  # 起動直後に1回実行
+        self.update_timer = QTimer(self)  # 新しい版の確認は、起動の少しあとと、1日1回
+        self.update_timer.timeout.connect(self.check_update)
+        self.update_timer.start(24 * 60 * 60 * 1000)
+        QTimer.singleShot(8000, self.check_update)
 
     # ---------- UI ----------
     def _build_ui(self) -> None:
         w = QWidget()
         self.setCentralWidget(w)
         v = QVBoxLayout(w)
+
+        self.update_bar = QWidget()  # 新しい版があるときだけ表示する
+        hb = QHBoxLayout(self.update_bar)
+        hb.setContentsMargins(0, 0, 0, 0)
+        self.update_label = QLabel()
+        self.update_label.setStyleSheet("background:#1f6fd0;color:white;font-weight:bold;padding:8px;")
+        self.update_btn = QPushButton("更新する")
+        self.update_btn.clicked.connect(self._ask_update)
+        hb.addWidget(self.update_label, 1)
+        hb.addWidget(self.update_btn)
+        self.update_bar.hide()
+        v.addWidget(self.update_bar)
 
         self.banner = QLabel()
         self.banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -597,6 +655,87 @@ class MainWindow(QMainWindow):
             self, "サインインが切れています",
             "Microsoft 365 のサインインが切れたため、メールを取り込めていません。\n"
             "設定画面を開き、「接続テスト」で再サインインしてください。")
+
+    # ---------- 更新 ----------
+    def check_update(self) -> None:
+        """新しい版を、裏で確認する。通信に失敗しても、ログに残すだけで、画面には出さない。"""
+        if not self.st.check_updates or self._updating:
+            return
+
+        def job():
+            try:
+                return ("ok", updater.check_latest())
+            except Exception as e:  # noqa: BLE001
+                return ("err", str(e))
+
+        task = _SyncTask(job)
+        task.signals.done.connect(self._update_checked)
+        QThreadPool.globalInstance().start(task)
+
+    def _update_checked(self, res) -> None:
+        kind, val = res
+        if kind == "err":
+            log.warning("%s", val)
+            return
+        self._update = val
+        self._refresh_update_bar()
+        if val is None or self._update_prompted == val.version:
+            return
+        self._update_prompted = val.version
+        if self.isVisible() and not self.isMinimized():
+            self._ask_update()
+        else:  # 画面が隠れているときは、割り込まずに、吹き出しで知らせる
+            self.tray.showMessage("特退金脱退 更新", f"新しい版 {val.version} があります。画面を開いて確認してください。",
+                                  QSystemTrayIcon.MessageIcon.Information, 8000)
+
+    def _refresh_update_bar(self) -> None:
+        info = self._update
+        self.update_bar.setVisible(info is not None)
+        if info is None:
+            return
+        can = updater.is_installed_build()
+        self.update_label.setText(f"新しい版 {info.version} があります。" + ("" if can else "（インストール版ではないため、自動更新は使えません）"))
+        self.update_btn.setVisible(can)
+        self.update_btn.setEnabled(not self._updating)
+
+    def _ask_update(self) -> None:
+        info = self._update
+        if info is None or self._updating:
+            return
+        dlg = UpdateDialog(info, updater.is_installed_build(), self)
+        if dlg.exec() and dlg.install:
+            self._apply_update(info)
+
+    def _apply_update(self, info: updater.UpdateInfo) -> None:
+        self._updating = True
+        self.update_label.setText(f"新しい版 {info.version} を取得しています…")
+        self.update_btn.setEnabled(False)
+        dest = Path(tempfile.gettempdir()) / "TokutaiApp-update"
+
+        def job():
+            try:
+                return ("ok", updater.download_installer(info, dest))
+            except Exception as e:  # noqa: BLE001
+                return ("err", str(e))
+
+        task = _SyncTask(job)
+        task.signals.done.connect(self._update_downloaded)
+        QThreadPool.globalInstance().start(task)
+
+    def _update_downloaded(self, res) -> None:
+        self._updating = False
+        kind, val = res
+        if kind == "ok":
+            try:
+                updater.launch_installer(val)
+            except OSError as e:
+                kind, val = "err", f"インストーラーを実行できませんでした: {e}"
+            else:
+                self.quit_app()  # インストーラーが、更新したあとに、アプリを起動し直す
+                return
+        log.warning("更新に失敗: %s", val)
+        self._refresh_update_bar()
+        QMessageBox.critical(self, "更新", f"更新できませんでした。しばらくしてから、もう一度試してください。\n{val}")
 
     # ---------- 操作 ----------
     def _update_cases(self, label: str, nos: list[str], fn) -> None:
