@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import logging
-import tempfile
 import threading
 from datetime import date
-from pathlib import Path
 
 from PySide6.QtCore import QDate, QItemSelectionModel, QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
@@ -710,11 +708,10 @@ class MainWindow(QMainWindow):
         self._updating = True
         self.update_label.setText(f"新しい版 {info.version} を取得しています…")
         self.update_btn.setEnabled(False)
-        dest = Path(tempfile.gettempdir()) / "TokutaiApp-update"
 
         def job():
             try:
-                return ("ok", updater.download_installer(info, dest))
+                return ("ok", updater.download_installer(info))
             except Exception as e:  # noqa: BLE001
                 return ("err", str(e))
 
@@ -728,7 +725,7 @@ class MainWindow(QMainWindow):
         if kind == "ok":
             try:
                 updater.launch_installer(val)
-            except OSError as e:
+            except (OSError, updater.UpdateError) as e:
                 kind, val = "err", f"インストーラーを実行できませんでした: {e}"
             else:
                 self.quit_app()  # インストーラーが、更新したあとに、アプリを起動し直す

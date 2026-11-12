@@ -82,13 +82,35 @@ def test_download_ok_and_mismatch(tmp_path, monkeypatch):
     payload = b"installer-bytes" * 1000
     good = hashlib.sha256(payload).hexdigest()
     monkeypatch.setattr(updater.requests, "get", fake_get(payload, f"{good}  {EXE}"))
-    p = updater.download_installer(info, tmp_path)
-    assert p.read_bytes() == payload
-    # ハッシュが違うものは、削除して、実行させない
+    dl = updater.download_installer(info, tmp_path)
+    assert dl.path.read_bytes() == payload and dl.sha256 == good
+    assert dl.path.parent != tmp_path and dl.path.parent.name.startswith("TokutaiApp-update-")  # 新しいランダムなフォルダ
+    # 2回目は、別のフォルダになる（固定の名前ではない）
+    assert updater.download_installer(info, tmp_path).path.parent != dl.path.parent
+    # ハッシュが違うものは、削除して、実行させない（空のフォルダも残さない）
+    before = set(tmp_path.iterdir())
     monkeypatch.setattr(updater.requests, "get", fake_get(payload, "0" * 64))
     with pytest.raises(updater.UpdateError):
         updater.download_installer(info, tmp_path)
-    assert not (tmp_path / EXE).exists()
+    assert set(tmp_path.iterdir()) == before
+
+
+def test_launch_rechecks_hash(tmp_path, monkeypatch):
+    info = updater.parse_release(release(), "1.0.0")
+    payload = b"installer-bytes"
+    good = hashlib.sha256(payload).hexdigest()
+    monkeypatch.setattr(updater.requests, "get", fake_get(payload, f"{good}  {EXE}"))
+    dl = updater.download_installer(info, tmp_path)
+    launched = []
+    monkeypatch.setattr(updater.subprocess, "Popen", lambda *a, **k: launched.append(a[0]))
+    updater.launch_installer(dl)  # 変わっていなければ、実行する
+    assert launched and launched[0][0] == str(dl.path) and "/SILENT" in launched[0]
+    # 取得のあとに、差し替えられたら、実行しない
+    dl.path.write_bytes(b"tampered")
+    launched.clear()
+    with pytest.raises(updater.UpdateError):
+        updater.launch_installer(dl)
+    assert launched == [] and not dl.path.exists()
 
 
 def test_download_rejects_foreign_url(tmp_path):

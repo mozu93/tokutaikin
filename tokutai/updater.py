@@ -11,6 +11,7 @@ import logging
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -97,12 +98,30 @@ def parse_sha256(text: str) -> str:
     return m.group(1).lower()
 
 
-def download_installer(info: UpdateInfo, dest_dir: Path) -> Path:
-    """インストーラーを取得し、SHA-256 が一致したものだけを返す。一致しなければ削除して UpdateError。"""
+@dataclass(frozen=True)
+class Downloaded:
+    path: Path
+    sha256: str  # 照合に使った値。実行の直前に、もう一度照合する
+
+
+def _file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 256), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def download_installer(info: UpdateInfo, base_dir: Path | None = None) -> Downloaded:
+    """インストーラーを取得し、SHA-256 が一致したものだけを返す。一致しなければ削除して UpdateError。
+
+    取得先は、そのつど新しく作る、名前がランダムなフォルダにする（固定の名前に、先回りして
+    ファイルを置かれたり、差し替えられたりしないようにするため）。
+    """
     for u in (info.installer_url, info.sha256_url):
         if not u.startswith(DOWNLOAD_PREFIX):
             raise UpdateError("取得先が、このアプリの Release ではありません。")
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_dir = Path(tempfile.mkdtemp(prefix="TokutaiApp-update-", dir=base_dir))  # 新規作成。利用者だけが書ける
     dest = dest_dir / info.installer_name
     try:
         r = requests.get(info.sha256_url, timeout=TIMEOUT)
@@ -119,19 +138,34 @@ def download_installer(info: UpdateInfo, dest_dir: Path) -> Path:
                     h.update(chunk)
                     f.write(chunk)
     except requests.RequestException as e:
-        dest.unlink(missing_ok=True)
+        _discard(dest)
         raise UpdateError(f"インストーラーを取得できませんでした: {e}") from e
     except UpdateError:
-        dest.unlink(missing_ok=True)
+        _discard(dest)
         raise
     if h.hexdigest() != expected:
-        dest.unlink(missing_ok=True)
+        _discard(dest)
         raise UpdateError("インストーラーの SHA-256 が一致しないため、実行しません。")
-    return dest
+    return Downloaded(dest, expected)
 
 
-def launch_installer(path: Path) -> None:
-    """インストーラーを、アプリとは別のプロセスで実行する（呼び出し側が、このあとアプリを終了する）。"""
+def _discard(dest: Path) -> None:
+    dest.unlink(missing_ok=True)
+    try:
+        dest.parent.rmdir()
+    except OSError:
+        pass
+
+
+def launch_installer(dl: Downloaded) -> None:
+    """インストーラーを、アプリとは別のプロセスで実行する（呼び出し側が、このあとアプリを終了する）。
+
+    取得から実行までの間に差し替えられていないか、実行の直前に、もう一度 SHA-256 を照合する。
+    """
+    if not dl.path.is_file() or dl.path.is_symlink() or _file_sha256(dl.path) != dl.sha256:
+        _discard(dl.path)
+        raise UpdateError("インストーラーが取得後に変更されたため、実行しません。")
+    path = dl.path
     flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     subprocess.Popen([str(path), "/SILENT", "/CLOSEAPPLICATIONS", "/SUPPRESSMSGBOXES", "/NORESTART"],
                      creationflags=flags, close_fds=True)
