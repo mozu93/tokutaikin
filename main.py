@@ -28,6 +28,9 @@ def main() -> int:
         "QPushButton { min-height: 40px; padding: 4px 14px; }"
         "QHeaderView::section { padding: 6px; }"
         "QTableWidget::item { padding: 4px; }"
+        "QTableWidget::item:selected { background: #2f6fd0; color: white; }"  # 警告の赤背景でも選択行が分かるように
+        "QTableWidget::item:focus { border: none; outline: none; }"  # クリックしたセルの枠を出さない
+        "QTableWidget { outline: 0; }"
     )
 
     # 二重起動の防止: 既存の画面を前面に出して終了

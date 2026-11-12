@@ -260,6 +260,7 @@ def test_undo_skips_changed_and_removes_created(tmp_path):
 
 def test_daily_backup(tmp_path, monkeypatch):
     import sqlite3
+    from contextlib import closing
     monkeypatch.setenv("TOKUTAI_HOME", str(tmp_path))
     db.init(f"sqlite:///{tmp_path / 'live.db'}")
     with db.session() as s:
@@ -267,7 +268,8 @@ def test_daily_backup(tmp_path, monkeypatch):
         s.commit()
     assert db.daily_backup(keep=2, today=date(2026, 11, 10)) is True
     p = tmp_path / "backup" / "tokutai_20261110.db"
-    assert [r[0] for r in sqlite3.connect(p).execute("select case_no from cases")] == ["B1"]
+    with closing(sqlite3.connect(p)) as c:  # Windowsでは開いたままだと古いバックアップを消せない
+        assert [r[0] for r in c.execute("select case_no from cases")] == ["B1"]
     assert db.daily_backup(keep=2, today=date(2026, 11, 10)) is False  # 同じ日は作り直さない
     db.daily_backup(keep=2, today=date(2026, 11, 11))
     db.daily_backup(keep=2, today=date(2026, 11, 12))

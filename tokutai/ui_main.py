@@ -79,7 +79,7 @@ class DateDialog(QDialog):
         form.addRow(bb)
 
     def value(self) -> date:
-        return self.edit.date().toPyDate()
+        return self.edit.date().toPython()
 
 
 class EditDatesDialog(QDialog):
@@ -109,7 +109,7 @@ class EditDatesDialog(QDialog):
         form.addRow(bb)
 
     def values(self) -> dict[str, date | None]:
-        return {a: (ed.date().toPyDate() if chk.isChecked() else None)
+        return {a: (ed.date().toPython() if chk.isChecked() else None)
                 for a, (chk, ed) in self._rows.items()}
 
 
@@ -196,8 +196,12 @@ class MainWindow(QMainWindow):
         hh.sectionClicked.connect(self._header_clicked)
         self._show_sort_indicator()
         self.table.setColumnWidth(COLUMNS.index("会社名"), 240)
-        self.table.setColumnWidth(COL_STATUS, 130)
+        self.table.setColumnWidth(COL_STATUS, 165)  # 「不備（補正待ち）」が入る幅
+        self.table.setColumnWidth(COLUMNS.index("警告"), 90)
+        self.table.setColumnWidth(COLUMNS.index("経過日数"), 85)
         self.table.setColumnWidth(COL_NO, 160)
+        for name in ("案件作成日", "不備連絡日", "書類到着日", "処理済日"):  # yyyy-MM-dd が見切れない幅
+            self.table.setColumnWidth(COLUMNS.index(name), 130)
         self._restore_column_order()
         hh.setSectionsMovable(True)  # 見出しのドラッグで列の順番を変えられる
         hh.sectionMoved.connect(self._save_column_order)
@@ -319,6 +323,7 @@ class MainWindow(QMainWindow):
                     "処理済日": _fmt(c.done_date), "備考": c.note}
             for j, name in enumerate(COLUMNS):
                 it = QTableWidgetItem(vals[name])
+                it.setToolTip(vals[name])  # 列に収まらない長い会社名・備考も、マウスを乗せると全文が見える
                 if a:
                     it.setBackground(QBrush(RED_BG))
                     it.setForeground(QBrush(QColor(0, 0, 0)))
@@ -597,7 +602,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "案件を追加", "同じ案件番号がすでに登録されています。")
                 return
             c = Case(case_no=no, company=dlg.company.text().strip(),
-                     received_date=dlg.recv.date().toPyDate(), note="手動追加")
+                     received_date=dlg.recv.date().toPython(), note="手動追加")
             s.add(c)
             s.commit()
             self.undo_stack.push("案件の追加", {no: (None, service.snapshot(c))})
