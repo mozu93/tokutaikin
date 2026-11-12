@@ -6,7 +6,7 @@ import threading
 from datetime import date
 
 from PySide6.QtCore import QDate, QItemSelectionModel, QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
+from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox, QPushButton,
@@ -30,13 +30,21 @@ GRAY_FG = QColor(130, 130, 130)
 
 
 def _icon(color: str) -> QIcon:
-    pm = QPixmap(32, 32)
+    """状態の色の丸に、白い「退」を重ねたアイコン。"""
+    pm = QPixmap(64, 64)  # 縮小表示でもぼやけにくいよう、大きめに描く
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
     p.setBrush(QColor(color))
     p.setPen(Qt.PenStyle.NoPen)
-    p.drawEllipse(2, 2, 28, 28)
+    p.drawEllipse(2, 2, 60, 60)
+    font = QFont("Yu Gothic UI")
+    font.setPixelSize(44)
+    font.setBold(True)
+    p.setFont(font)
+    p.setPen(QColor("white"))
+    p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, "退")
     p.end()
     return QIcon(pm)
 
