@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tokutai import db, paths, service  # noqa: E402
 from tokutai.bizdays import business_days_between  # noqa: E402
 from tokutai.corporate import CompanyNormalizer, NOTE_AMBIGUOUS, NOTE_UNKNOWN, load_table  # noqa: E402
-from tokutai.graph import MailItem  # noqa: E402
+from tokutai.graph import GraphAuthRequired, GraphError, MailItem  # noqa: E402
 from tokutai.mailparse import KIND_CREATE, KIND_DONE, classify, parse_body  # noqa: E402
 from tokutai.settings import Settings  # noqa: E402
 
@@ -99,6 +99,29 @@ def test_sync_flow(tmp_path, monkeypatch, norm):
     # 翌日は再通知
     service.run_sync(st, client, norm, today=date(2026, 11, 13))
     assert len(client.sent) == 2
+
+
+class AuthLostClient(FakeClient):
+    """サインインが切れた状態（保存済みトークンが使えない）を再現する。"""
+
+    def __init__(self, exc):
+        super().__init__([])
+        self.exc = exc
+
+    def find_folder_id(self, name, interactive=False):
+        raise self.exc
+
+
+def test_sync_auth_required(tmp_path, monkeypatch, norm):
+    monkeypatch.setenv("TOKUTAI_HOME", str(tmp_path))
+    db.init(f"sqlite:///{tmp_path / 't.db'}")
+    st = Settings(folder_name="x")
+    r = service.run_sync(st, AuthLostClient(GraphAuthRequired("サインインが必要です。")), norm,
+                         today=date(2026, 11, 12))
+    assert r.auth_required and r.errors
+    # 通信エラーなど、サインイン切れ以外ではフラグを立てない
+    r2 = service.run_sync(st, AuthLostClient(GraphError("通信に失敗しました")), norm, today=date(2026, 11, 12))
+    assert not r2.auth_required and r2.errors
 
 
 def test_process_alert():

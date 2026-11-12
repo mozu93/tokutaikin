@@ -21,6 +21,10 @@ class GraphError(Exception):
     pass
 
 
+class GraphAuthRequired(GraphError):
+    """保存済みのサインインが切れていて、画面での再サインインが必要。"""
+
+
 @dataclass
 class MailItem:
     mail_id: str
@@ -61,7 +65,7 @@ class GraphClient:
             if r and "access_token" in r:
                 return r["access_token"]
         if not interactive:
-            raise GraphError("サインインが必要です。設定画面の「接続テスト」でサインインしてください。")
+            raise GraphAuthRequired("サインインが必要です。設定画面の「接続テスト」でサインインしてください。")
         r = self._app.acquire_token_interactive(SCOPES)
         if "access_token" not in r:
             raise GraphError(f"サインインに失敗しました: {r.get('error_description', r.get('error'))}")

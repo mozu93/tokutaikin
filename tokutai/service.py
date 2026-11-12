@@ -13,6 +13,7 @@ from . import db
 from .bizdays import business_days_between
 from .corporate import CompanyNormalizer
 from .db import Case, NotifyLog, ProcessedMail
+from .graph import GraphAuthRequired
 from .mailparse import KIND_CREATE, KIND_DONE, classify, html_to_text, parse_body
 from .settings import Settings
 
@@ -256,6 +257,7 @@ class SyncResult:
     done_cases: int = 0
     notified: int = 0
     errors: list[str] = field(default_factory=list)
+    auth_required: bool = False  # サインインが切れていて、再サインインが必要
 
 
 def _append_note(c: Case, note: str) -> None:
@@ -408,6 +410,7 @@ def run_sync(st: Settings, client, norm: CompanyNormalizer, interactive: bool = 
             import_mails(s, st, client, norm, res, interactive)
         except Exception as e:  # noqa: BLE001
             s.rollback()
+            res.auth_required |= isinstance(e, GraphAuthRequired)
             res.errors.append(f"メール取り込みに失敗: {e}")
             log.exception("メール取り込み失敗")
         try:
@@ -419,6 +422,7 @@ def run_sync(st: Settings, client, norm: CompanyNormalizer, interactive: bool = 
             notify_managers(s, st, client, today, res)
         except Exception as e:  # noqa: BLE001
             s.rollback()
+            res.auth_required |= isinstance(e, GraphAuthRequired)
             res.errors.append(f"管理職への通知に失敗: {e}")
             log.exception("通知失敗")
         db.set_meta(s, "last_run", datetime.now().isoformat(timespec="seconds"))

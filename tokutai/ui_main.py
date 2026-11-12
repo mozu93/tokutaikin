@@ -147,6 +147,8 @@ class MainWindow(QMainWindow):
         self._running = False
         self._alert_count = 0
         self._last_error: list[str] = []
+        self._auth_required = False  # サインイン切れ中
+        self._auth_dialog_date: date | None = None  # サインイン切れのダイアログを出した日（1日1回）
         self._totals = {"new": 0, "done": 0, "notified": 0}
         self._last_update = "-"
         self.undo_stack = service.UndoStack()
@@ -337,13 +339,17 @@ class MainWindow(QMainWindow):
                 sm.select(self.table.model().index(i, 0),
                           QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
         self._alert_count = len(alerts)
-        if alerts:
+        if self._auth_required:  # 警告件数より優先して表示する（メールを取り込めていないため）
+            n = f"（期限超過 {len(alerts)} 件）" if alerts else ""
+            self.banner.setText(f"⚠ サインインが切れています。設定画面の「接続テスト」で再サインインしてください{n}")
+            self.banner.setStyleSheet("background:#f0b400;color:black;font-size:18px;font-weight:bold;padding:8px;")
+        elif alerts:
             self.banner.setText(f"警告 {len(alerts)} 件")
             self.banner.setStyleSheet("background:#d62f2f;color:white;font-size:18px;font-weight:bold;padding:8px;")
         else:
             self.banner.setText("警告なし")
             self.banner.setStyleSheet("background:#2e9e4f;color:white;font-size:18px;font-weight:bold;padding:8px;")
-        self.tray.setIcon(self.icon_warn if alerts else self.icon_ok)
+        self.tray.setIcon(self.icon_warn if (alerts or self._auth_required) else self.icon_ok)
         self._popup_new_alerts(alerts)
         self._update_status()
         self._update_buttons()
@@ -465,10 +471,24 @@ class MainWindow(QMainWindow):
         self._totals["done"] += res.done_cases
         self._totals["notified"] += res.notified
         self._last_error = res.errors
+        self._auth_required = res.auth_required
         self._last_update = date.today().strftime("%m/%d ") + __import__("datetime").datetime.now().strftime("%H:%M")
         if res.errors:
             self.tray.showMessage("特退金脱退 エラー", res.errors[0], QSystemTrayIcon.MessageIcon.Critical, 8000)
         self.reload()
+        self._notify_auth_required()
+
+    def _notify_auth_required(self) -> None:
+        """サインイン切れを検知した日に1回、画面を前面に出して案内する。"""
+        today = date.today()
+        if not self._auth_required or self._auth_dialog_date == today:
+            return
+        self._auth_dialog_date = today
+        self.show_front()
+        QMessageBox.warning(
+            self, "サインインが切れています",
+            "Microsoft 365 のサインインが切れたため、メールを取り込めていません。\n"
+            "設定画面を開き、「接続テスト」で再サインインしてください。")
 
     # ---------- 操作 ----------
     def _update_cases(self, label: str, nos: list[str], fn) -> None:
