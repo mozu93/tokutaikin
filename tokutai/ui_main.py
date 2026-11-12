@@ -471,7 +471,11 @@ class MainWindow(QMainWindow):
         self._totals["done"] += res.done_cases
         self._totals["notified"] += res.notified
         self._last_error = res.errors
-        self._auth_required = res.auth_required
+        # 通信エラーなどで認証状態が分からない回は、直前の状態を保つ（バナーを消さない）
+        if res.auth_required or not res.errors:
+            self._auth_required = res.auth_required
+        if not self._auth_required:
+            self._auth_dialog_date = None  # 回復後に再び切れたら、同じ日でも案内し直す
         self._last_update = date.today().strftime("%m/%d ") + __import__("datetime").datetime.now().strftime("%H:%M")
         if res.errors:
             self.tray.showMessage("特退金脱退 エラー", res.errors[0], QSystemTrayIcon.MessageIcon.Critical, 8000)
