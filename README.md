@@ -5,6 +5,7 @@ Outlook に届く案件メールから受付簿を自動で作り、期限を過
 
 **バージョン: 1.1.0**（変更点は `RELEASE_NOTES.md`）
 
+- 紹介: [`docs/introduction-slides.html`](docs/introduction-slides.html)（同僚向けの紹介スライド。ダウンロードしてブラウザで開く）
 - 使い方: `MANUAL.md`（操作マニュアル）
 - 仕様: `特退金脱退_処理漏れ防止アプリ_仕様書.html`
 
