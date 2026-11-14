@@ -217,10 +217,13 @@
 <p style="font-size:30px;line-height:1.6;color:#3a4658">「Windows起動時に自動で起動する」を選んで保存します。</p>
 </div>
 </div>
-<p style="font-size:32px;line-height:1.6;color:#3a4658">Windowsの画面に「PCが保護されました」と出たら、「詳細情報」→「実行」を選びます。</p>
+<div style="display:flex;flex-direction:column;gap:12px;background:#fdf2cc;border-radius:16px;padding:28px 36px">
+<p style="font-size:34px;font-weight:700;color:#5a4300">実行する前に、ファイルが本物か確かめます</p>
+<p style="font-size:30px;line-height:1.6;color:#5a4300">公式の Release の .sha256 の値と、PowerShell の Get-FileHash の結果が一致するかを確認。一致しないときは、実行せず、管理者に相談してください。</p>
+</div>
 <p style="position:absolute;left:128px;bottom:64px;font-size:24px;color:#5b6678">特退金脱退 処理漏れ防止アプリ</p>
 
-</section></div><p class="notes"><b>発表者メモ</b>　接続情報（テナントID、クライアントID、Outlookのフォルダ名）は、管理者から受け取ります。このインストーラーには署名がないため、初回にWindowsの警告が出ることがあります。</p></article>
+</section></div><p class="notes"><b>発表者メモ</b>　接続情報（テナントID、クライアントID、Outlookのフォルダ名）は、管理者から受け取ります。このインストーラーには署名がないため、実行の前に、SHA-256の値で確認します。値が一致したうえで、Windowsの警告（SmartScreen）が出た場合だけ、「詳細情報」→「実行」を選びます。</p></article>
 <article><p class="num">10 / 10</p><div class="frame"><section id="next" data-transition="fade" style="background:#16233a;color:#f6f8fb;font-family:'Noto Sans JP','Yu Gothic UI',Meiryo,sans-serif;padding:128px;display:flex;flex-direction:column;justify-content:center;gap:48px">
 <h2 style="font-size:84px;font-weight:700;line-height:1.2">はじめてみましょう</h2>
 <div style="display:flex;flex-direction:column;gap:28px">

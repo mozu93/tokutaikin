@@ -94,7 +94,15 @@ Microsoft へのサインイン、メールの実送信（管理職への警告�
 
 ### 利用者向け（インストール）
 
-GitHub の Release（https://github.com/mozu93/tokutaikin/releases）から、`TokutaiApp-Setup-<版>.exe` を取得して実行する。管理者権限は要らない。`%LOCALAPPDATA%\Programs\TokutaiApp` に入り、デスクトップとスタートメニューにショートカットができる。署名がないため、SmartScreen が警告したら、「詳細情報」→「実行」を選ぶ。
+GitHub の Release（https://github.com/mozu93/tokutaikin/releases）から、`TokutaiApp-Setup-<版>.exe` を取得して実行する。管理者権限は要らない。`%LOCALAPPDATA%\Programs\TokutaiApp` に入り、デスクトップとスタートメニューにショートカットができる。
+
+インストーラーにはコード署名がないため、**実行する前に、ファイルが本物か SHA-256 で確かめる**。取得は、必ず上の公式の Release から行う。PowerShell で、取得したフォルダに移動して次を実行し、Release に添付した `TokutaiApp-Setup-<版>.exe.sha256` の値と一致したときだけ実行する。一致しないときは、実行せず、管理者に相談する。
+
+```
+Get-FileHash .\TokutaiApp-Setup-<版>.exe -Algorithm SHA256
+```
+
+値が一致したうえで、Windows の SmartScreen が警告した場合だけ、「詳細情報」→「実行」を選ぶ。
 
 ### 開発者向け（リリースの手順）
 
