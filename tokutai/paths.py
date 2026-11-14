@@ -58,6 +58,13 @@ def app_icon_path() -> Path:
     return base / "data" / "app.ico"
 
 
+def manual_path() -> Path:
+    """操作マニュアル。インストール版は exe と同じフォルダ、ソースから動かすときはリポジトリの直下。"""
+    if hasattr(sys, "_MEIPASS"):
+        return Path(sys.executable).parent / "MANUAL.md"
+    return Path(__file__).parent.parent / "MANUAL.md"
+
+
 def ensure_abbr_file() -> Path:
     """法人略称表を利用者フォルダにコピーする（後から編集できるようにするため）。"""
     dst = abbr_path()

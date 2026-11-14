@@ -15,6 +15,7 @@ STATUS_RECEIVED = "書類待ち"
 STATUS_ARRIVED = "書類到着"
 STATUS_DONE = "処理済"
 STATUS_DEFECT = "不備（補正待ち）"
+STATUS_CANCELLED = "取りやめ"  # 退職をやめたなど、案件そのものを取りやめた
 
 
 class Base(DeclarativeBase):
@@ -29,12 +30,16 @@ class Case(Base):
     docs_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     done_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     defect_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    cancel_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    hold_until: Mapped[date | None] = mapped_column(Date, nullable=True)  # 保留の確認日（この日になると警告に戻る）
     note: Mapped[str] = mapped_column(Text, default="")
 
     @property
     def status(self) -> str:
-        if self.done_date:
+        if self.done_date:  # 処理完了メールが届いたなど、実際に処理された場合は、取りやめより優先する
             return STATUS_DONE
+        if self.cancel_date:
+            return STATUS_CANCELLED
         if self.docs_date:
             return STATUS_ARRIVED
         if self.defect_date:
@@ -74,6 +79,10 @@ def _migrate(engine) -> None:
         cols = {r[1] for r in conn.exec_driver_sql("PRAGMA table_info(cases)")}
         if "defect_date" not in cols:
             conn.exec_driver_sql("ALTER TABLE cases ADD COLUMN defect_date DATE")
+        if "cancel_date" not in cols:
+            conn.exec_driver_sql("ALTER TABLE cases ADD COLUMN cancel_date DATE")
+        if "hold_until" not in cols:
+            conn.exec_driver_sql("ALTER TABLE cases ADD COLUMN hold_until DATE")
 
 
 def init(url: str | None = None) -> None:

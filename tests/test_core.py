@@ -1,5 +1,5 @@
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -87,8 +87,8 @@ def test_sync_flow(tmp_path, monkeypatch, norm):
     with db.session() as s:
         c1, c2, c9 = s.get(db.Case, "T1001"), s.get(db.Case, "T1002"), s.get(db.Case, "T9999")
         assert c1.company == "サンプル株式会社" and c1.status == "書類待ち"
-        assert c2.status == "処理済" and c2.note == service.NOTE_NO_DOCS  # 書類到着を飛ばした
-        assert service.NOTE_UNSEEN in c9.note and service.NOTE_NO_DOCS in c9.note
+        assert c2.status == "処理済" and c2.note == ""  # 書類到着を記録せず処理済になっても、備考は付けない
+        assert c9.note == service.NOTE_UNSEEN
         assert c1.note == ""
         assert service.alert_kind(c1, date(2026, 11, 12), st) == service.ALERT_DOCS  # 7営業日
         assert service.alert_kind(c1, date(2026, 11, 10), st) is None
@@ -192,6 +192,216 @@ def test_insurer_reminder_skip_and_failure(tmp_path, monkeypatch):
         client = FakeClient([])
         service.send_reminders(s, st, client, [], c, today)
         assert client.sent == [] and service.collect_reminders(s, st, today) == []
+
+
+def test_cancel_case(tmp_path, monkeypatch, norm):
+    monkeypatch.setenv("TOKUTAI_HOME", str(tmp_path))
+    db.init(f"sqlite:///{tmp_path / 't.db'}")
+    st = Settings(insurer_email="ins@example.com")
+    today = date(2026, 11, 20)  # 案件作成日（11/2）から、書類未着の基準（7営業日）を超えている
+    with db.session() as s:
+        s.add_all([db.Case(case_no="A", company="甲", received_date=date(2026, 11, 2)),
+                   db.Case(case_no="B", company="乙", received_date=date(2026, 11, 2))])
+        s.commit()
+        a = s.get(db.Case, "A")
+        assert service.alert_kind(a, today, st) == service.ALERT_DOCS and service.elapsed_days(a, today) is not None
+        assert [r.case_no for r in service.collect_reminders(s, st, today)] == ["A", "B"]
+
+        # 取りやめにすると、警告・経過日数・催促の対象から外れる。日付と理由は備考に残る
+        service.record_cancel(a, date(2026, 11, 14), "退職取りやめ")
+        s.commit()
+        assert a.status == db.STATUS_CANCELLED and a.note == "取りやめ 2026-11-14：退職取りやめ"
+        assert service.alert_kind(a, today, st) is None and service.elapsed_days(a, today) is None
+        assert [r.case_no for r in service.collect_reminders(s, st, today)] == ["B"]
+        assert [x.case_no for x in service.collect_alerts(list(s.scalars(select_cases())), today, st)] == ["B"]
+
+        # 一覧: 「未完了のみ」には出ない。「すべて」と検索には出る。標準の並びでは、最後
+        cases = list(s.scalars(select_cases()))
+        alerts = {x.case_no: x for x in service.collect_alerts(cases, today, st)}
+        names = lambda mode, q="": [c.case_no for c in service.select_rows(cases, alerts, mode, q, "", True, today)]  # noqa: E731
+        assert names(service.FILTER_OPEN) == ["B"] and names(service.FILTER_ALL) == ["B", "A"]
+        assert names(service.FILTER_OPEN, "甲") == ["A"]
+        assert [c.case_no for c in service.select_rows(cases, alerts, service.FILTER_ALL, "", "取りやめ日", True, today)] == ["A", "B"]
+
+        # 取りやめ済には、到着・不備・処理済・取りやめを、重ねて記録しない
+        sel = [("A", a.status), ("B", s.get(db.Case, "B").status)]
+        for act in (service.BULK_ARRIVED, service.BULK_DEFECT, service.BULK_DONE, service.BULK_CANCEL):
+            assert service.bulk_targets(sel, act) == (["B"], 1)
+
+        # 取り消すと元の状態に戻り、取り消した履歴が備考に残る
+        service.restore_cancel(a, date(2026, 11, 15))
+        assert a.status == db.STATUS_RECEIVED and a.cancel_date is None
+        assert a.note == "取りやめ 2026-11-14：退職取りやめ　取りやめを取り消し 2026-11-15"
+        assert service.alert_kind(a, today, st) == service.ALERT_DOCS
+
+
+def select_cases():
+    from sqlalchemy import select
+    return select(db.Case)
+
+
+def test_cancel_undo_and_reason_optional(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKUTAI_HOME", str(tmp_path))
+    db.init(f"sqlite:///{tmp_path / 't.db'}")
+    with db.session() as s:
+        s.add(db.Case(case_no="A", company="甲", received_date=date(2026, 11, 2), note="既存の備考"))
+        s.commit()
+        stack = service.UndoStack()
+        service.apply_undoable(s, stack, "取りやめ", ["A"], lambda c: service.record_cancel(c, date(2026, 11, 14), ""))
+        c = s.get(db.Case, "A")
+        assert c.status == db.STATUS_CANCELLED and c.note == "既存の備考　取りやめ 2026-11-14"  # 理由は空でもよい
+        label, restored, skipped = service.undo(s, stack)
+        assert (label, restored, skipped) == ("取りやめ", 1, 0)
+        c = s.get(db.Case, "A")
+        assert c.cancel_date is None and c.note == "既存の備考"  # 日付も備考も元に戻る
+
+
+def test_done_mail_after_cancel(tmp_path, monkeypatch, norm):
+    monkeypatch.setenv("TOKUTAI_HOME", str(tmp_path))
+    db.init(f"sqlite:///{tmp_path / 't.db'}")
+    with db.session() as s:
+        s.add(db.Case(case_no="T1", company="甲", received_date=date(2026, 11, 2), docs_date=date(2026, 11, 4)))
+        s.commit()
+        service.record_cancel(s.get(db.Case, "T1"), date(2026, 11, 10), "取りやめ")
+        s.commit()
+        res = service.SyncResult()
+        service.apply_mail(s, norm, KIND_DONE, "T1", "", date(2026, 11, 12), res)
+        c = s.get(db.Case, "T1")
+        assert c.status == db.STATUS_DONE  # 実際に処理されたので、処理済を優先する
+        assert service.NOTE_DONE_AFTER_CANCEL in c.note and res.done_cases == 1
+
+
+def test_purge_cancelled(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKUTAI_HOME", str(tmp_path))
+    db.init(f"sqlite:///{tmp_path / 't.db'}")
+    today = date(2026, 11, 20)
+    with db.session() as s:
+        s.add_all([
+            db.Case(case_no="OLD", cancel_date=today - timedelta(days=366)),  # 取りやめから1年超 → 削除
+            db.Case(case_no="NEW", cancel_date=today - timedelta(days=364)),  # 1年以内 → 残す
+            db.Case(case_no="OPEN", received_date=date(2020, 1, 6)),  # 未完了は、古くても消さない
+            db.Case(case_no="REDONE", cancel_date=today - timedelta(days=400),
+                    done_date=today - timedelta(days=10)),  # 取りやめのあとに処理済 → 処理済日で判断し、残す
+        ])
+        s.commit()
+        assert service.purge_old_done(s, today) == 1
+        assert {c.case_no for c in s.scalars(select_cases())} == {"NEW", "OPEN", "REDONE"}
+
+
+def test_csv_has_cancel_column(tmp_path):
+    c = db.Case(case_no="A", company="甲", received_date=date(2026, 11, 2), cancel_date=date(2026, 11, 14), note="x")
+    p = tmp_path / "o.csv"
+    service.export_csv([c], p)
+    rows = p.read_text(encoding="utf-8-sig").splitlines()
+    assert rows[0].split(",")[-3:] == ["取りやめ日", "保留の確認日", "備考"]
+    assert rows[1].split(",")[0] == "取りやめ" and "2026-11-14" in rows[1]
+
+
+def test_company_sort_ignores_corporate_type(norm):
+    """会社名の並び替えは、先頭・末尾の法人の種類（株式会社など）を無視する。"""
+    w = norm.formal_words
+    key = lambda n: service.company_sort_key(n, w)  # noqa: E731
+    assert key("株式会社甲") == key("甲株式会社") == "甲"
+    assert key("医療法人乙会") == "乙会" and key("社会福祉法人丙") == "丙"
+    assert key("株式会社") == "株式会社"  # 除くと空になるときは、そのまま
+    assert key("甲商事") == "甲商事"  # 途中にある語は、除かない
+    cases = [db.Case(case_no=str(i), company=n) for i, n in enumerate(
+        ["株式会社ウ", "ア株式会社", "有限会社イ", "合同会社エ", ""])]
+    rows = service.select_rows(cases, {}, service.FILTER_ALL, "", "会社名", True, date(2026, 11, 20), w)
+    assert [c.company for c in rows] == ["ア株式会社", "有限会社イ", "株式会社ウ", "合同会社エ", ""]  # 空は最後
+    rows = service.select_rows(cases, {}, service.FILTER_ALL, "", "会社名", False, date(2026, 11, 20), w)
+    assert [c.company for c in rows] == ["合同会社エ", "株式会社ウ", "有限会社イ", "ア株式会社", ""]
+
+
+def test_hold_case(tmp_path, monkeypatch, norm):
+    """保留: 確認日の前日まで警告・催促を止め、確認日に警告へ戻る。状態が変わると解く。"""
+    monkeypatch.setenv("TOKUTAI_HOME", str(tmp_path))
+    db.init(f"sqlite:///{tmp_path / 't.db'}")
+    st = Settings(insurer_email="ins@example.com")
+    today = date(2026, 11, 20)  # 金曜。案件作成日（11/2）から基準の7営業日を超えている
+    with db.session() as s:
+        s.add_all([db.Case(case_no="A", company="甲", received_date=date(2026, 11, 2), note="既存"),
+                   db.Case(case_no="B", company="乙", received_date=date(2026, 11, 2))])
+        s.commit()
+        a = s.get(db.Case, "A")
+        assert service.alert_kind(a, today, st) == service.ALERT_DOCS
+
+        # 3営業日後（11/26木。11/23は祝日）まで保留。確認日とメモは備考に残る
+        until = service.record_hold(a, today, 3, "26日に送ると連絡あり")
+        s.commit()
+        assert until == date(2026, 11, 26) and a.hold_until == until
+        assert a.note == "既存　保留 2026-11-20（確認日 2026-11-26）：26日に送ると連絡あり"
+        assert service.is_on_hold(a, today) and service.alert_kind(a, today, st) is None
+        assert service.alert_kind(a, date(2026, 11, 25), st) is None  # 確認日の前日までは保留
+        assert service.alert_kind(a, until, st) == service.ALERT_DOCS  # 確認日に警告へ戻る
+        assert [r.case_no for r in service.collect_reminders(s, st, today)] == ["B"]  # 催促も止まる
+        assert [x.case_no for x in service.collect_alerts(list(s.scalars(select_cases())), today, st)] == ["B"]
+
+        # 一覧の「未完了のみ」には残る。処理済・取りやめ済は、保留にできない
+        cases = list(s.scalars(select_cases()))
+        rows = service.select_rows(cases, {}, service.FILTER_OPEN, "", "", True, today)
+        assert {c.case_no for c in rows} == {"A", "B"}
+        assert service.bulk_targets([("A", a.status), ("X", db.STATUS_DONE), ("Y", db.STATUS_CANCELLED)],
+                                    service.BULK_HOLD) == (["A"], 2)
+
+        # 解除すると、すぐ警告に戻る
+        service.release_hold(a)
+        assert not service.is_on_hold(a, today) and service.alert_kind(a, today, st) == service.ALERT_DOCS
+
+        # 書類が届く・不備を連絡すると、保留は解ける（届いたあとの未処理の警告を、隠さない）
+        service.record_hold(a, today, 10)
+        service.record_arrived(a, today)
+        assert a.hold_until is None and a.docs_date == today
+        service.record_hold(a, today, 1)
+        service.record_defect(a, today)
+        assert a.hold_until is None
+
+        # 範囲外の日数は受け付けない
+        for bad in (0, 11):
+            with pytest.raises(ValueError):
+                service.record_hold(a, today, bad)
+
+
+def test_hold_undo_and_migrate(tmp_path, monkeypatch):
+    import sqlite3
+    monkeypatch.setenv("TOKUTAI_HOME", str(tmp_path))
+    path = tmp_path / "old.db"
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE cases (case_no VARCHAR(40) PRIMARY KEY, company VARCHAR(200), received_date DATE, "
+                "docs_date DATE, done_date DATE, defect_date DATE, cancel_date DATE, note TEXT)")
+    con.execute("INSERT INTO cases VALUES ('OLD1', '旧会社', '2026-11-02', NULL, NULL, NULL, NULL, '旧データ')")
+    con.commit()
+    con.close()
+    db.init(f"sqlite:///{path}")  # 保留の列がない古いDBでも、列が足され、既存のデータは残る
+    with db.session() as s:
+        assert s.get(db.Case, "OLD1").hold_until is None and s.get(db.Case, "OLD1").note == "旧データ"
+        stack = service.UndoStack()
+        service.apply_undoable(s, stack, "保留", ["OLD1"], lambda c: service.record_hold(c, date(2026, 11, 20), 3))
+        assert s.get(db.Case, "OLD1").hold_until == date(2026, 11, 26)
+        service.undo(s, stack)
+        c = s.get(db.Case, "OLD1")
+        assert c.hold_until is None and c.note == "旧データ"
+
+
+def test_migrate_adds_cancel_column(tmp_path, monkeypatch):
+    """取りやめ日の列がない古いDBを開くと、列が足され、既存のデータは、そのまま残る。"""
+    import sqlite3
+    monkeypatch.setenv("TOKUTAI_HOME", str(tmp_path))
+    path = tmp_path / "old.db"
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE cases (case_no VARCHAR(40) PRIMARY KEY, company VARCHAR(200), received_date DATE, "
+                "docs_date DATE, done_date DATE, defect_date DATE, note TEXT)")
+    con.execute("INSERT INTO cases VALUES ('OLD1', '旧会社', '2026-11-02', NULL, NULL, NULL, '旧データ')")
+    con.commit()
+    con.close()
+    db.init(f"sqlite:///{path}")
+    with db.session() as s:
+        c = s.get(db.Case, "OLD1")
+        assert c.company == "旧会社" and c.note == "旧データ" and c.cancel_date is None
+        assert c.status == db.STATUS_RECEIVED
+        c.cancel_date = date(2026, 11, 14)
+        s.commit()
+        assert s.get(db.Case, "OLD1").status == db.STATUS_CANCELLED
 
 
 def test_process_alert():

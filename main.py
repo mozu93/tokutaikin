@@ -72,6 +72,12 @@ def main() -> int:
         st.autostart_initialized = True
         settings_mod.save(st)
 
+    if st.autostart_initialized and st.autostart:  # 以前の版の登録（--minimized 付き）を、今の形に直す
+        try:
+            autostart.refresh()
+        except Exception:  # noqa: BLE001
+            logging.getLogger(__name__).exception("自動起動の登録の更新に失敗")
+
     win = MainWindow(start_minimized="--minimized" in sys.argv)
 
     def on_connection():

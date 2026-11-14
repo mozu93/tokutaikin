@@ -6,11 +6,11 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Protocol
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.orm import Session
 
 from . import db
-from .bizdays import business_days_between
+from .bizdays import add_business_days, business_days_between
 from .corporate import CompanyNormalizer
 from .db import Case, NotifyLog, ProcessedMail
 from .graph import GraphAuthRequired
@@ -23,8 +23,8 @@ ALERT_DOCS = "書類未着"
 ALERT_PROCESS = "未処理"
 ALERT_DEFECT = "補正未着"
 NOTE_UNSEEN = "受付メール未確認"
-NOTE_NO_DOCS = "書類到着日の記録なし"
-RETENTION_DAYS = 365  # 処理済の案件を残す期間
+NOTE_DONE_AFTER_CANCEL = "取りやめ後に処理完了メールを受信"
+RETENTION_DAYS = 365  # 処理済・取りやめの案件を残す期間
 
 
 # ---------- 警告判定 ----------
@@ -37,8 +37,18 @@ class Alert:
     days: int
 
 
+HOLD_MAX_DAYS = 10  # 保留で選べる最大の営業日数
+
+
+def is_on_hold(c: Case, today: date) -> bool:
+    """保留中か。確認日の前日までが保留で、確認日になると警告に戻る。"""
+    return bool(c.hold_until and today < c.hold_until and not c.done_date and not c.cancel_date)
+
+
 def alert_kind(c: Case, today: date, s: Settings) -> str | None:
-    if c.done_date:
+    if c.done_date or c.cancel_date:  # 処理済・取りやめの案件は、警告しない
+        return None
+    if is_on_hold(c, today):  # 事業所に連絡済みで、確認日まで待つ案件は、警告しない
         return None
     if c.docs_date:
         if business_days_between(c.docs_date, today) >= s.warn_process_days:
@@ -54,8 +64,8 @@ def alert_kind(c: Case, today: date, s: Settings) -> str | None:
 
 
 def elapsed_days(c: Case, today: date) -> int | None:
-    """状態ごとの経過営業日。書類待ち→案件作成日から、書類到着→到着日から。処理済は空。"""
-    if c.done_date:
+    """状態ごとの経過営業日。書類待ち→案件作成日から、書類到着→到着日から。処理済・取りやめは空。"""
+    if c.done_date or c.cancel_date:
         return None
     base = c.docs_date or c.defect_date or c.received_date
     return business_days_between(base, today) if base else None
@@ -78,19 +88,35 @@ FILTER_ALERT = "警告のみ"
 FILTER_DEFECT = "不備のみ"
 FILTERS = [FILTER_OPEN, FILTER_ALL, FILTER_ALERT, FILTER_DEFECT]
 
-_STATUS_ORDER = {db.STATUS_RECEIVED: 0, db.STATUS_DEFECT: 1, db.STATUS_ARRIVED: 2, db.STATUS_DONE: 3}
+_STATUS_ORDER = {db.STATUS_RECEIVED: 0, db.STATUS_DEFECT: 1, db.STATUS_ARRIVED: 2, db.STATUS_DONE: 3,
+                 db.STATUS_CANCELLED: 4}
 
 
-def _sort_value(col: str, c: Case, alert: Alert | None, today: date):
+def company_sort_key(name: str, words: tuple[str, ...] = ()) -> str:
+    """会社名の並び替え用の値。先頭・末尾の法人の種類（株式会社など）を除く。除くと空になるときは、そのまま使う。"""
+    s = (name or "").strip()
+    core = s
+    for w in words:  # 長い語から。「株式会社○○」「○○株式会社」の両方を同じ並びにする
+        if core.startswith(w) and len(core) > len(w):
+            core = core[len(w):].strip()
+            break
+    for w in words:
+        if core.endswith(w) and len(core) > len(w):
+            core = core[:-len(w)].strip()
+            break
+    return core or s
+
+
+def _sort_value(col: str, c: Case, alert: Alert | None, today: date, words: tuple[str, ...] = ()):
     """列ごとの並び替え値。空（None）は、昇順でも降順でも最後に回す。"""
+    if col == "会社名":
+        return company_sort_key(c.company, words) or None
     if col == "状態":
         return _STATUS_ORDER[c.status]
     if col == "警告":
         return alert.kind if alert else None
     if col == "案件番号":
         return c.case_no
-    if col == "会社名":
-        return c.company or None
     if col == "案件作成日":
         return c.received_date
     if col == "不備連絡日":
@@ -99,6 +125,8 @@ def _sort_value(col: str, c: Case, alert: Alert | None, today: date):
         return c.docs_date
     if col == "処理済日":
         return c.done_date
+    if col == "取りやめ日":
+        return c.cancel_date
     if col == "経過日数":
         return elapsed_days(c, today)
     if col == "備考":
@@ -107,16 +135,16 @@ def _sort_value(col: str, c: Case, alert: Alert | None, today: date):
 
 
 def select_rows(cases: list[Case], alerts: dict[str, Alert], mode: str, query: str,
-                sort_col: str, ascending: bool, today: date) -> list[Case]:
+                sort_col: str, ascending: bool, today: date, corp_words: tuple[str, ...] = ()) -> list[Case]:
     """絞り込み・検索・並び替えをした案件の一覧を返す。
 
-    検索語があるときは「未完了のみ」を無視して、処理済も探す（探し漏れ防止）。
+    検索語があるときは「未完了のみ」を無視して、処理済・取りやめも探す（探し漏れ防止）。
     検索は案件番号・会社名・備考が対象。
     """
     q = (query or "").strip().lower()
     rows = []
     for c in cases:
-        if mode == FILTER_OPEN and not q and c.done_date:
+        if mode == FILTER_OPEN and not q and (c.done_date or c.cancel_date):
             continue
         if mode == FILTER_ALERT and c.case_no not in alerts:
             continue
@@ -126,18 +154,19 @@ def select_rows(cases: list[Case], alerts: dict[str, Alert], mode: str, query: s
             continue
         rows.append(c)
     if sort_col:
-        filled = [(c, _sort_value(sort_col, c, alerts.get(c.case_no), today)) for c in rows]
+        filled = [(c, _sort_value(sort_col, c, alerts.get(c.case_no), today, corp_words)) for c in rows]
         have = sorted((x for x in filled if x[1] is not None), key=lambda x: (x[1], x[0].case_no),
                       reverse=not ascending)
         rows = [c for c, _ in have] + [c for c, v in filled if v is None]
-    else:  # 標準: 警告 → 未完了 → 処理済、案件作成日の古い順
-        rows.sort(key=lambda c: (c.case_no not in alerts, c.done_date is not None, c.received_date or date.min))
+    else:  # 標準: 警告 → 未完了 → 処理済・取りやめ、案件作成日の古い順
+        rows.sort(key=lambda c: (c.case_no not in alerts, bool(c.done_date or c.cancel_date),
+                                 c.received_date or date.min))
     return rows
 
 
 # ---------- 元に戻す ----------
 UNDO_LIMIT = 10
-_UNDO_FIELDS = ("company", "received_date", "defect_date", "docs_date", "done_date", "note")
+_UNDO_FIELDS = ("company", "received_date", "defect_date", "docs_date", "done_date", "cancel_date", "hold_until", "note")
 
 
 def snapshot(c: Case) -> dict:
@@ -210,22 +239,22 @@ def undo(s: Session, stack: UndoStack) -> tuple[str, int, int] | None:
 
 
 # ---------- まとめて処理 ----------
-BULK_ARRIVED, BULK_DEFECT, BULK_DONE = "arrived", "defect", "done"
+BULK_ARRIVED, BULK_DEFECT, BULK_DONE, BULK_CANCEL, BULK_HOLD = "arrived", "defect", "done", "cancel", "hold"
 
 
 def bulk_targets(selection: list[tuple[str, str]], action: str) -> tuple[list[str], int]:
     """選んだ案件（案件番号, 状態）のうち、その操作ができるものと、対象外の件数を返す。
 
-    処理済の案件には、到着・不備・処理済のどれも記録しない。不備の案件に「不備を連絡した」を
-    重ねて記録することもしない（連絡日が上書きされるのを防ぐ）。
+    処理済・取りやめの案件には、到着・不備・処理済・取りやめのどれも記録しない。不備の案件に
+    「不備を連絡した」を重ねて記録することもしない（連絡日が上書きされるのを防ぐ）。
     """
-    skip = {db.STATUS_DONE} | ({db.STATUS_DEFECT} if action == BULK_DEFECT else set())
+    skip = {db.STATUS_DONE, db.STATUS_CANCELLED} | ({db.STATUS_DEFECT} if action == BULK_DEFECT else set())
     targets = [no for no, st in selection if st not in skip]
     return targets, len(selection) - len(targets)
 
 
 # ---------- CSV出力 ----------
-CSV_HEADER = ["状態", "案件番号", "会社名", "案件作成日", "不備連絡日", "書類到着日", "処理済日", "備考"]
+CSV_HEADER = ["状態", "案件番号", "会社名", "案件作成日", "不備連絡日", "書類到着日", "処理済日", "取りやめ日", "保留の確認日", "備考"]
 
 
 def export_csv(cases: list[Case], path) -> int:
@@ -241,7 +270,7 @@ def export_csv(cases: list[Case], path) -> int:
         w.writerow(CSV_HEADER)
         for c in rows:
             w.writerow([c.status, c.case_no, c.company, f(c.received_date), f(c.defect_date),
-                        f(c.docs_date), f(c.done_date), c.note])
+                        f(c.docs_date), f(c.done_date), f(c.cancel_date), f(c.hold_until), c.note])
     return len(rows)
 
 
@@ -271,6 +300,44 @@ def record_defect(c: Case, defect_date: date) -> None:
         _append_note(c, f"元の書類到着日 {c.docs_date:%Y-%m-%d}")
     c.defect_date = defect_date
     c.docs_date = None  # 補正書類が届くまで、書類は揃っていない扱い
+    c.hold_until = None  # 状態が変わったので、保留は解く
+
+
+def record_arrived(c: Case, docs_date: date) -> None:
+    """書類が届いた日を記録する。不備は解消し、保留は解く。"""
+    c.docs_date = docs_date
+    c.defect_date = None  # 補正書類が届いたので不備は解消
+    c.hold_until = None  # 状態が変わったので、保留は解く
+
+
+def record_hold(c: Case, today: date, business_days: int, memo: str = "") -> date:
+    """事業所に連絡済みで待つ案件を、n営業日後まで保留にする。確認日と任意のメモを、備考にも残す。"""
+    if not 1 <= business_days <= HOLD_MAX_DAYS:
+        raise ValueError("保留の営業日数は、1〜10の範囲で指定してください")
+    until = add_business_days(today, business_days)
+    c.hold_until = until
+    memo = (memo or "").strip()
+    _append_note(c, f"保留 {today:%Y-%m-%d}（確認日 {until:%Y-%m-%d}）" + (f"：{memo}" if memo else ""))
+    return until
+
+
+def release_hold(c: Case) -> None:
+    """保留を解除して、警告の対象に戻す。"""
+    c.hold_until = None
+
+
+def record_cancel(c: Case, cancel_date: date, reason: str = "") -> None:
+    """案件を取りやめにする（退職をやめたなど）。日付と理由は、備考にも残す。"""
+    c.cancel_date = cancel_date
+    reason = (reason or "").strip()
+    _append_note(c, f"取りやめ {cancel_date:%Y-%m-%d}" + (f"：{reason}" if reason else ""))
+
+
+def restore_cancel(c: Case, today: date) -> None:
+    """取りやめを取り消して、元の状態に戻す。取り消したことは、備考に履歴として残す。"""
+    if c.cancel_date:
+        c.cancel_date = None
+        _append_note(c, f"取りやめを取り消し {today:%Y-%m-%d}")
 
 
 def apply_mail(s: Session, norm: CompanyNormalizer, kind: str, case_no: str, company_raw: str,
@@ -297,13 +364,12 @@ def apply_mail(s: Session, norm: CompanyNormalizer, kind: str, case_no: str, com
     elif kind == KIND_DONE:
         if c is None:
             c = Case(case_no=case_no, company="", received_date=None, done_date=recv, note=NOTE_UNSEEN)
-            _append_note(c, NOTE_NO_DOCS)
             s.add(c)
             res.done_cases += 1
         elif c.done_date is None:
             c.done_date = recv
-            if c.docs_date is None:  # 書類到着の処理を飛ばして処理済になった場合は備考に残す
-                _append_note(c, NOTE_NO_DOCS)
+            if c.cancel_date:  # 取りやめにしたあとで処理完了メールが届いた場合は、処理済を優先し、備考に残す
+                _append_note(c, NOTE_DONE_AFTER_CANCEL)
             res.done_cases += 1
     s.flush()
 
@@ -341,9 +407,14 @@ def import_mails(s: Session, st: Settings, source: MailSource, norm: CompanyNorm
 
 # ---------- 保存期間 ----------
 def purge_old_done(s: Session, today: date) -> int:
-    """処理済日から1年（365日）をすぎた案件を削除する。未完了の案件は消さない。"""
+    """処理済日、または取りやめ日から1年（365日）をすぎた案件を削除する。未完了の案件は消さない。
+
+    処理済日があるときは、処理済日で判断する（取りやめのあとに処理済になった案件は、処理済日から数える）。
+    """
     cutoff = today - timedelta(days=RETENTION_DAYS)
-    nos = list(s.scalars(select(Case.case_no).where(Case.done_date.is_not(None), Case.done_date < cutoff)))
+    nos = list(s.scalars(select(Case.case_no).where(or_(
+        and_(Case.done_date.is_not(None), Case.done_date < cutoff),
+        and_(Case.done_date.is_(None), Case.cancel_date.is_not(None), Case.cancel_date < cutoff)))))
     if nos:
         s.execute(delete(NotifyLog).where(NotifyLog.case_no.in_(nos)))
         s.execute(delete(Case).where(Case.case_no.in_(nos)))
@@ -422,7 +493,7 @@ def collect_reminders(s: Session, st: Settings, today: date) -> list[Reminder]:
     n = max(1, st.remind_days)
     out: list[Reminder] = []
     for c in s.scalars(select(Case)):
-        if c.status != db.STATUS_RECEIVED or c.received_date is None:
+        if c.status != db.STATUS_RECEIVED or c.received_date is None or is_on_hold(c, today):
             continue
         days = business_days_between(c.received_date, today)
         if days < n:

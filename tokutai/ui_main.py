@@ -3,30 +3,35 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import date
+from datetime import date, datetime
 
 from PySide6.QtCore import QDate, QItemSelectionModel, QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
-    QMenu, QMessageBox, QPlainTextEdit, QPushButton, QSystemTrayIcon, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QMenu, QMessageBox, QPlainTextEdit, QPushButton, QSystemTrayIcon, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget,
 )
 from sqlalchemy import select
 
 from . import __version__, db, service, updater
 from .corporate import CompanyNormalizer, load_table
 from . import paths, settings as settings_mod
+from .bizdays import add_business_days
 from .db import Case
 from .graph import GraphClient
 from .ui_settings import SettingsDialog
 
 log = logging.getLogger(__name__)
 
-COLUMNS = ["状態", "警告", "経過日数", "案件番号", "会社名", "案件作成日", "不備連絡日", "書類到着日", "処理済日", "備考"]
+COLUMNS = ["状態", "警告", "経過日数", "案件番号", "会社名", "案件作成日", "書類到着日", "不備連絡日", "処理済日",
+           "取りやめ日", "備考"]
 COL_STATUS, COL_NO = COLUMNS.index("状態"), COLUMNS.index("案件番号")
 RED_BG = QColor(255, 205, 205)
 GRAY_FG = QColor(130, 130, 130)
+WAKE_TICK_SEC = 30  # スリープ復帰を見張る周期
+WAKE_GAP_SEC = 180  # 周期がこれ以上空いたら、スリープしていたとみなす
+HOLD_BG =QColor(255, 244, 204)  # 保留中（事業所に連絡済みで待っている）
 
 
 def _icon(color: str) -> QIcon:
@@ -90,10 +95,70 @@ class DateDialog(QDialog):
         return self.edit.date().toPython()
 
 
+class CancelDialog(QDialog):
+    """案件を取りやめにする（退職をやめたなど）。日付と、任意の理由を聞く。"""
+
+    def __init__(self, count: int, skipped: int, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("取りやめにする")
+        self.setMinimumWidth(420)
+        self.edit = QDateEdit(QDate.currentDate())
+        self.edit.setCalendarPopup(True)
+        self.edit.setDisplayFormat("yyyy-MM-dd")
+        self.reason = QLineEdit()
+        self.reason.setPlaceholderText("例: 退職取りやめ（空欄でもかまいません）")
+        form = QFormLayout(self)
+        msg = f"{count}件を取りやめにします。警告・催促・経過日数の対象から外れます。"
+        if skipped:
+            msg += f"\n（処理済・取りやめ済の{skipped}件は対象外です）"
+        form.addRow(QLabel(msg))
+        form.addRow("取りやめ日", self.edit)
+        form.addRow("理由（備考に残る）", self.reason)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        form.addRow(bb)
+
+    def value(self) -> date:
+        return self.edit.date().toPython()
+
+
+class HoldDialog(QDialog):
+    """事業所に連絡済みで待つ案件を、n営業日後まで保留にする。メモは任意で、備考に残る。"""
+
+    def __init__(self, count: int, skipped: int, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("保留にする")
+        self.setMinimumWidth(420)
+        self.days = QComboBox()
+        today = date.today()
+        for n in range(1, service.HOLD_MAX_DAYS + 1):
+            self.days.addItem(f"{n}営業日後（{add_business_days(today, n):%Y-%m-%d}）", n)
+        self.days.setCurrentIndex(2)  # 初期値は3営業日後
+        self.memo = QLineEdit()
+        self.memo.setPlaceholderText("例: ○日に送ると連絡あり（空欄でもかまいません）")
+        form = QFormLayout(self)
+        msg = f"{count}件を保留にします。確認日までは、警告・催促の対象から外れ、確認日に警告へ戻ります。"
+        if skipped:
+            msg += f"\n（処理済・取りやめ済の{skipped}件は対象外です）"
+        lab = QLabel(msg)
+        lab.setWordWrap(True)
+        form.addRow(lab)
+        form.addRow("確認日", self.days)
+        form.addRow("メモ（備考に残る）", self.memo)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        form.addRow(bb)
+
+    def value(self) -> int:
+        return int(self.days.currentData())
+
+
 class EditDatesDialog(QDialog):
     """日付の入れ間違いを、その場で直す。チェックを外すと、その日付は空になる。"""
     FIELDS = (("received_date", "案件作成日"), ("defect_date", "不備連絡日"),
-              ("docs_date", "書類到着日"), ("done_date", "処理済日"))
+              ("docs_date", "書類到着日"), ("done_date", "処理済日"), ("cancel_date", "取りやめ日"))
 
     def __init__(self, case: Case, parent=None):
         super().__init__(parent)
@@ -275,6 +340,11 @@ class MainWindow(QMainWindow):
         self.update_timer.timeout.connect(self.check_update)
         self.update_timer.start(24 * 60 * 60 * 1000)
         QTimer.singleShot(8000, self.check_update)
+        # スリープからの復帰を見つける: 見張りの周期が大きく空いて、日付が変わっていたら、画面を出す
+        self._last_tick = datetime.now()
+        self.wake_timer = QTimer(self)
+        self.wake_timer.timeout.connect(self._wake_check)
+        self.wake_timer.start(WAKE_TICK_SEC * 1000)
 
     # ---------- UI ----------
     def _build_ui(self) -> None:
@@ -327,7 +397,7 @@ class MainWindow(QMainWindow):
         self.table.setColumnWidth(COLUMNS.index("警告"), 90)
         self.table.setColumnWidth(COLUMNS.index("経過日数"), 85)
         self.table.setColumnWidth(COL_NO, 160)
-        for name in ("案件作成日", "不備連絡日", "書類到着日", "処理済日"):  # yyyy-MM-dd が見切れない幅
+        for name in ("案件作成日", "不備連絡日", "書類到着日", "処理済日", "取りやめ日"):  # yyyy-MM-dd が見切れない幅
             self.table.setColumnWidth(COLUMNS.index(name), 130)
         self._restore_column_order()
         hh.setSectionsMovable(True)  # 見出しのドラッグで列の順番を変えられる
@@ -353,10 +423,10 @@ class MainWindow(QMainWindow):
         more = QMenu(self.btn_more)
         for item in (
             ("案件を追加", self.add_case), None,
-            ("日付を修正", self.edit_dates), ("会社名を編集", self.edit_company),
-            ("備考を編集", self.edit_note), None,
+            ("保留にする（連絡済み・待つ）", self.hold_case), ("保留を解除", self.release_hold), None,
+            ("取りやめにする", self.cancel_case), ("取りやめを取り消す", self.restore_cancelled), None,
             ("書類到着を取り消す", self.cancel_arrived), ("不備を取り消す", self.cancel_defect), None,
-            ("CSV出力", self.export_csv), ("設定", self.open_settings),
+            ("日付を修正", self.edit_dates), ("会社名を編集", self.edit_company), ("備考を編集", self.edit_note),
         ):
             if item is None:
                 more.addSeparator()
@@ -375,6 +445,44 @@ class MainWindow(QMainWindow):
 
         self.status = QLabel()
         self.statusBar().addWidget(self.status, 1)
+        self._build_menubar()
+
+    def _build_menubar(self) -> None:
+        """上部のメニュー。案件の操作は「その他」、ファイルの出力・設定・ヘルプはここにまとめる。"""
+        bar = self.menuBar()
+        m_file = bar.addMenu("ファイル(&F)")
+        m_file.addAction("CSV出力", self.export_csv)
+        m_file.addAction("設定", self.open_settings)
+        m_file.addSeparator()
+        m_file.addAction("終了", self.quit_app)
+        m_help = bar.addMenu("ヘルプ(&H)")
+        m_help.addAction("使い方", self.show_manual)
+        m_help.addAction("バージョン情報", self.show_about)
+
+    def show_manual(self) -> None:
+        path = paths.manual_path()
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            QMessageBox.warning(self, "使い方", f"操作マニュアルが見つかりません。\n{path}")
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle("使い方（操作マニュアル）")
+        dlg.resize(760, 560)
+        lay = QVBoxLayout(dlg)
+        view = QTextBrowser()
+        view.setOpenExternalLinks(False)  # マニュアル内のリンクから、外部へは開かない
+        view.setMarkdown(text)
+        lay.addWidget(view)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        bb.rejected.connect(dlg.reject)
+        lay.addWidget(bb)
+        dlg.exec()
+
+    def show_about(self) -> None:
+        QMessageBox.information(
+            self, "バージョン情報",
+            f"特退金脱退 処理漏れ防止\nバージョン {__version__}\n\nデータの場所: {paths.data_dir()}")
 
     def _build_tray(self) -> None:
         self.icon_ok, self.icon_warn = _icon("#2e9e4f"), _icon("#d62f2f")
@@ -403,6 +511,17 @@ class MainWindow(QMainWindow):
         w, h = min(self.width(), area.width()), min(self.height(), area.height())
         self.resize(w, h)
         self.move(area.x() + (area.width() - w) // 2, area.y() + (area.height() - h) // 2)
+
+    def _wake_check(self, now: datetime | None = None) -> None:
+        """スリープから復帰して、日付が変わっていたら、画面を前面に出す（起きたままの日またぎでは出さない）。"""
+        now = now or datetime.now()
+        slept = (now - self._last_tick).total_seconds() > WAKE_GAP_SEC
+        crossed = now.date() != self._last_tick.date()
+        self._last_tick = now
+        if slept and crossed:
+            self.reload()
+            self.show_front()
+            QTimer.singleShot(10_000, self.sync)  # 復帰直後は通信できないことがあるので、少し待って取り込む
 
     def show_front(self) -> None:
         self._center_on_screen()
@@ -441,23 +560,28 @@ class MainWindow(QMainWindow):
             cases = list(s.scalars(select(Case)))
         alerts = {a.case_no: a for a in service.collect_alerts(cases, today, self.st)}
         rows = service.select_rows(cases, alerts, self.filter.currentText(), self.search.text(),
-                                   self.st.sort_column, self.st.sort_ascending, today)
+                                   self.st.sort_column, self.st.sort_ascending, today, self.norm.formal_words)
         keep = {no for no, _ in self._selection()}  # 並びが変わっても、同じ案件の選択を保つ
         self.table.setRowCount(len(rows))
         for i, c in enumerate(rows):
             a = alerts.get(c.case_no)
             ed = service.elapsed_days(c, today)
-            vals = {"状態": c.status, "警告": a.kind if a else "", "経過日数": "" if ed is None else str(ed),
+            hold = service.is_on_hold(c, today)
+            warn = a.kind if a else (f"保留中（〜{c.hold_until:%m/%d}）" if hold else "")
+            vals = {"状態": c.status, "警告": warn, "経過日数": "" if ed is None else str(ed),
                     "案件番号": c.case_no, "会社名": c.company, "案件作成日": _fmt(c.received_date),
                     "不備連絡日": _fmt(c.defect_date), "書類到着日": _fmt(c.docs_date),
-                    "処理済日": _fmt(c.done_date), "備考": c.note}
+                    "処理済日": _fmt(c.done_date), "取りやめ日": _fmt(c.cancel_date), "備考": c.note}
             for j, name in enumerate(COLUMNS):
                 it = QTableWidgetItem(vals[name])
                 it.setToolTip(vals[name])  # 列に収まらない長い会社名・備考も、マウスを乗せると全文が見える
                 if a:
                     it.setBackground(QBrush(RED_BG))
                     it.setForeground(QBrush(QColor(0, 0, 0)))
-                elif c.done_date:
+                elif hold:
+                    it.setBackground(QBrush(HOLD_BG))
+                    it.setForeground(QBrush(QColor(0, 0, 0)))
+                elif c.done_date or c.cancel_date:
                     it.setForeground(QBrush(GRAY_FG))
                 self.table.setItem(i, j, it)
         sm = self.table.selectionModel()
@@ -781,10 +905,7 @@ class MainWindow(QMainWindow):
         self._update_cases(title, targets, lambda c: apply(c, d))
 
     def mark_arrived(self) -> None:
-        def apply(c, d):
-            c.docs_date = d
-            c.defect_date = None  # 補正書類が届いたので不備は解消
-        self._bulk("書類が届いた", service.BULK_ARRIVED, "書類到着日", apply)
+        self._bulk("書類が届いた", service.BULK_ARRIVED, "書類到着日", service.record_arrived)
 
     def cancel_arrived(self) -> None:
         no = self._selected_no()
@@ -800,6 +921,65 @@ class MainWindow(QMainWindow):
         if no and QMessageBox.question(self, "不備を取り消す", f"{no} の不備連絡日を取り消しますか？") \
                 == QMessageBox.StandardButton.Yes:
             self._update_case("不備の取り消し", no, lambda c: setattr(c, "defect_date", None))
+
+    def cancel_case(self) -> None:
+        """選んだ案件を、取りやめにする（退職をやめたなど）。理由は任意で、備考に残る。"""
+        sel = self._selection()
+        if not sel:
+            QMessageBox.information(self, "案件の選択", "一覧で案件を選んでください。")
+            return
+        targets, skipped = service.bulk_targets(sel, service.BULK_CANCEL)
+        if not targets:
+            QMessageBox.information(self, "取りやめにする", "選んだ案件は、すでにこの操作ができない状態です（処理済・取りやめ済）。")
+            return
+        dlg = CancelDialog(len(targets), skipped, self)
+        if not dlg.exec():
+            return
+        d, reason = dlg.value(), dlg.reason.text()
+        self._update_cases("取りやめ", targets, lambda c: service.record_cancel(c, d, reason))
+
+    def hold_case(self) -> None:
+        """事業所に連絡済みで待つ案件を、n営業日後まで保留にする（警告・催促を止める）。"""
+        sel = self._selection()
+        if not sel:
+            QMessageBox.information(self, "案件の選択", "一覧で案件を選んでください。")
+            return
+        targets, skipped = service.bulk_targets(sel, service.BULK_HOLD)
+        if not targets:
+            QMessageBox.information(self, "保留にする", "選んだ案件は、すでにこの操作ができない状態です（処理済・取りやめ済）。")
+            return
+        dlg = HoldDialog(len(targets), skipped, self)
+        if not dlg.exec():
+            return
+        n, memo, today = dlg.value(), dlg.memo.text(), date.today()
+        self._update_cases("保留", targets, lambda c: service.record_hold(c, today, n, memo))
+
+    def release_hold(self) -> None:
+        """保留を解除して、警告の対象に戻す。"""
+        sel = [no for no, _ in self._selection()]
+        if not sel:
+            QMessageBox.information(self, "案件の選択", "一覧で案件を選んでください。")
+            return
+        today = date.today()
+        with db.session() as s:
+            held = [no for no in sel if (c := s.get(Case, no)) is not None and service.is_on_hold(c, today)]
+        if not held:
+            QMessageBox.information(self, "保留を解除", "保留中の案件を選んでください。")
+            return
+        text = f"{held[0]} の保留を解除しますか？" if len(held) == 1 else f"{len(held)}件の保留を解除しますか？"
+        if QMessageBox.question(self, "保留を解除", text) == QMessageBox.StandardButton.Yes:
+            self._update_cases("保留の解除", held, service.release_hold)
+
+    def restore_cancelled(self) -> None:
+        """取りやめにした案件を、元の状態に戻す。"""
+        sel = [no for no, st in self._selection() if st == db.STATUS_CANCELLED]
+        if not sel:
+            QMessageBox.information(self, "取りやめを取り消す", "取りやめにした案件を選んでください。")
+            return
+        text = f"{sel[0]} の取りやめを取り消しますか？" if len(sel) == 1 else f"{len(sel)}件の取りやめを取り消しますか？"
+        if QMessageBox.question(self, "取りやめを取り消す", text) == QMessageBox.StandardButton.Yes:
+            today = date.today()
+            self._update_cases("取りやめの取り消し", sel, lambda c: service.restore_cancel(c, today))
 
     def edit_dates(self) -> None:
         no = self._selected_no()
@@ -820,13 +1000,18 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         for b in (self.btn_arrived, self.btn_defect, self.btn_done):
             menu.addAction(b.text(), b.click).setEnabled(b.isEnabled())
-        menu.addSeparator()
-        for text, fn in (
-            ("日付を修正", self.edit_dates), ("会社名を編集", self.edit_company),
-            ("備考を編集", self.edit_note), ("書類到着を取り消す", self.cancel_arrived),
-            ("不備を取り消す", self.cancel_defect),
+        # 上から、よく使う記録 → 保留・取りやめ → 取り消し → 修正・編集（下方）
+        for item in (
+            None,
+            ("保留にする（連絡済み・待つ）", self.hold_case), ("保留を解除", self.release_hold), None,
+            ("取りやめにする", self.cancel_case), ("取りやめを取り消す", self.restore_cancelled), None,
+            ("書類到着を取り消す", self.cancel_arrived), ("不備を取り消す", self.cancel_defect), None,
+            ("日付を修正", self.edit_dates), ("会社名を編集", self.edit_company), ("備考を編集", self.edit_note),
         ):
-            menu.addAction(text, fn)
+            if item is None:
+                menu.addSeparator()
+            else:
+                menu.addAction(item[0], item[1])
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def export_csv(self) -> None:

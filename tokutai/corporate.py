@@ -43,6 +43,9 @@ def load_table(path: Path) -> list[Abbr]:
 class CompanyNormalizer:
     def __init__(self, table: list[Abbr]):
         self._map = {a.abbr: a for a in table}
+        # 法人の種類（株式会社など）。会社名を並べ替えるとき、先頭・末尾にあれば無視する。長いものを先に照合
+        self.formal_words = tuple(sorted({a.formal for a in table if a.formal} | set(_KANJI.values()),
+                                         key=len, reverse=True))
         alts = sorted(self._map, key=len, reverse=True)  # 長い略称を先に照合
         alt = "|".join(re.escape(a) for a in alts)
         # 括弧付き: (カ) / カ) / (カ（閉じ括弧なしは末尾のみ）
