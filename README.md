@@ -3,10 +3,11 @@
 アクサ生命の特退金（特定退職金共済制度）脱退案件で、**書類の未着**と、書類到着後の**WEB処理漏れ**を防ぐ Windows 向けのデスクトップアプリです。
 Outlook に届く案件メールから受付簿を自動で作り、期限を過ぎた案件を画面で赤く知らせ、管理職へメールで通知します。
 
-**バージョン: 1.1.1**（変更点は `RELEASE_NOTES.md`）
+**バージョン: 1.1.2**（変更点は `RELEASE_NOTES.md`）
 
 - 紹介: [`docs/introduction-slides.html`](docs/introduction-slides.html)（同僚向けの紹介スライド。ダウンロードしてブラウザで開く）
-- 使い方: `MANUAL.md`（操作マニュアル）
+- 使い方: `MANUAL.md`（操作マニュアル。アプリの「ヘルプ」→「使い方」でも開く）
+- 使い方（画面写真つき）: [`docs/manual/index.html`](docs/manual/index.html)（ダウンロードしてブラウザで開く。`docs/manual/img/` も一緒に置く）
 - 仕様: `特退金脱退_処理漏れ防止アプリ_仕様書.html`
 
 ## 主な機能
@@ -120,10 +121,12 @@ Windows ランナーは、消費時間が2倍に数えられる。タグは、�
 ```
 pip install pyinstaller
 pyinstaller --noconsole --onedir --name TokutaiApp --icon tokutai/data/app.ico --add-data "tokutai/data;tokutai/data" main.py
-iscc /DAppVersion=1.1.1 installer\TokutaiApp.iss     # Inno Setup 6 が必要。出力: installer\Output\
+iscc /DAppVersion=1.1.2 installer\TokutaiApp.iss     # Inno Setup 6 が必要。出力: installer\Output\
 ```
 
 アプリのアイコン（`tokutai/data/app.ico`）は、`python tools/make_icon.py` で作り直せる。
+
+画面写真つきのマニュアル（`docs/manual/`）の画像は、`python -I tools/make_manual_screenshots.py` で作り直せる。実際の画面を、架空の案件（ダミーデータ）で描画する。本物の受付簿・設定には触れず、メールの取り込みや更新の確認の通信もしない。
 
 ### 自動更新のしくみ
 
