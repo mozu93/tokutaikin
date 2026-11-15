@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>特退金脱退 処理漏れ防止アプリ 操作マニュアル</title>
+<style>
+  :root {
+    --ink: #16233a; --sub: #5b6678; --line: #dfe5ee; --bg: #f4f6fa; --card: #ffffff;
+    --blue: #2f6fd0; --red: #d62f2f; --green: #2e9e4f; --amber: #f0b400;
+    --note-bg: #eef4fd; --warn-bg: #fff6e0; --danger-bg: #fdeceb;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.8; font-size: 16px;
+         font-family: 'Yu Gothic UI', 'Yu Gothic', Meiryo, 'Hiragino Sans', sans-serif; }
+  .layout { display: flex; align-items: flex-start; max-width: 1240px; margin: 0 auto; }
+  nav { position: sticky; top: 0; align-self: flex-start; width: 270px; flex: none; height: 100vh; overflow-y: auto;
+        padding: 24px 16px 24px 20px; font-size: 14px; }
+  nav .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  nav .logo { width: 42px; height: 42px; border-radius: 10px; background: var(--blue); color: #fff;
+              font-size: 26px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  nav .brand b { display: block; line-height: 1.3; }
+  nav .brand span { color: var(--sub); font-size: 12px; }
+  nav ol { list-style: none; margin: 0; padding: 0; }
+  nav li a { display: block; padding: 5px 10px; color: var(--ink); text-decoration: none; border-radius: 6px; line-height: 1.5; }
+  nav li a:hover { background: #e3e9f3; }
+  nav li.sub a { padding-left: 26px; color: var(--sub); font-size: 13px; }
+  main { flex: 1; min-width: 0; padding: 24px 24px 80px 8px; }
+  header.cover { background: #16233a; color: #f6f8fb; border-radius: 14px; padding: 36px 40px; margin-bottom: 28px; }
+  header.cover p { margin: 0; color: #9db9e6; font-size: 14px; }
+  header.cover h1 { margin: 6px 0 10px; font-size: 30px; line-height: 1.35; }
+  header.cover .lead { color: #d5dff0; font-size: 15px; }
+  section.chap { background: var(--card); border-radius: 14px; padding: 28px 36px 20px; margin-bottom: 24px;
+                 box-shadow: 0 1px 6px rgba(22, 35, 58, .08); }
+  h2 { margin: 0 0 14px; font-size: 24px; padding-bottom: 10px; border-bottom: 3px solid var(--blue); }
+  h2 .n { display: inline-block; min-width: 1.6em; color: var(--blue); }
+  h3 { margin: 30px 0 8px; font-size: 19px; }
+  h3 .n { color: var(--blue); margin-right: 4px; }
+  p { margin: 8px 0; }
+  ul, ol.steps { padding-left: 1.4em; }
+  li { margin: 4px 0; }
+  ol.steps { counter-reset: s; list-style: none; padding-left: 0; }
+  ol.steps > li { counter-increment: s; position: relative; padding-left: 40px; margin: 12px 0; }
+  ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: 2px; width: 28px; height: 28px; border-radius: 50%;
+                          background: var(--blue); color: #fff; font-weight: 700; font-size: 14px; text-align: center; line-height: 28px; }
+  code, kbd { font-family: Consolas, 'Courier New', monospace; background: #eef1f6; padding: 1px 6px; border-radius: 4px; font-size: .92em; }
+  kbd { border: 1px solid #c8d0de; border-bottom-width: 2px; background: #fff; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 15px; }
+  th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #eef3fb; white-space: nowrap; }
+  td.k { white-space: nowrap; font-weight: 700; }
+  figure { margin: 16px 0; }
+  figure img { display: block; max-width: 100%; height: auto; border: 1px solid #c9d2e0; border-radius: 8px;
+               box-shadow: 0 2px 10px rgba(22, 35, 58, .12); background: #fff; }
+  figure.small img { max-width: 380px; }
+  figure.tight img { display: inline-block; }
+  figcaption { margin-top: 6px; color: var(--sub); font-size: 13px; }
+  .shot { position: relative; display: inline-block; max-width: 100%; }
+  .shot img { display: block; max-width: 100%; height: auto; }
+  .pin { position: absolute; transform: translate(-50%, -50%); width: 26px; height: 26px; border-radius: 50%;
+         background: #e8590c; color: #fff; font-weight: 700; font-size: 14px; line-height: 26px; text-align: center;
+         border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+  .legend { counter-reset: l; list-style: none; padding: 0; margin: 12px 0; }
+  .legend li { position: relative; padding-left: 38px; margin: 8px 0; }
+  .legend li::before { counter-increment: l; content: counter(l); position: absolute; left: 0; top: 1px; width: 26px; height: 26px;
+                       border-radius: 50%; background: #e8590c; color: #fff; font-weight: 700; font-size: 14px; text-align: center; line-height: 26px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .grid figure { margin: 8px 0; }
+  .callout { border-left: 5px solid var(--blue); background: var(--note-bg); padding: 10px 16px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .callout.warn { border-color: var(--amber); background: var(--warn-bg); }
+  .callout.danger { border-color: var(--red); background: var(--danger-bg); }
+  .callout b.t { display: block; margin-bottom: 2px; }
+  .tag { display: inline-block; padding: 0 9px; border-radius: 999px; font-size: 13px; font-weight: 700; color: #fff; line-height: 1.7; }
+  .tag.red { background: var(--red); } .tag.green { background: var(--green); } .tag.amber { background: var(--amber); color: #000; }
+  .tag.blue { background: var(--blue); } .tag.gray { background: #8a93a3; }
+  .tl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+  .tl .st { padding: 6px 14px; border-radius: 8px; border: 2px solid var(--blue); background: #fff; font-weight: 700; }
+  .tl .st.alt { border-color: var(--amber); }
+  .tl .st.fin { border-color: #8a93a3; color: #6b7384; }
+  .tl .ar { color: var(--sub); }
+  .flow { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+  .flow .card { flex: 1 1 240px; border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; background: #fafbfd; }
+  .flow .card b { display: block; color: var(--blue); }
+  footer { color: var(--sub); font-size: 13px; text-align: center; margin-top: 30px; }
+  @media (max-width: 900px) {
+    .layout { display: block; }
+    nav { position: static; width: auto; height: auto; padding: 16px; }
+    main { padding: 0 12px 60px; }
+    section.chap { padding: 20px 18px 14px; }
+  }
+  @media print {
+    body { background: #fff; font-size: 13px; }
+    nav { display: none; }
+    main { padding: 0; }
+    section.chap { box-shadow: none; padding: 0 0 10px; break-inside: auto; }
+    figure, .callout, table { break-inside: avoid; }
+    h2, h3 { break-after: avoid; }
+    header.cover { background: #fff; color: #000; border: 1px solid #000; }
+    header.cover p, header.cover .lead { color: #333; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav aria-label="目次">
+  <div class="brand"><div class="logo">退</div><div><b>操作マニュアル</b><span>v1.1.0</span></div></div>
+  <ol>
+    <li><a href="#c1">1. このアプリでできること</a></li>
+    <li><a href="#c2">2. 最初の設定（1回だけ）</a></li>
+    <li><a href="#c3">3. 毎日の使い方</a></li>
+    <li class="sub"><a href="#c3-1">3.1 画面の見方</a></li>
+    <li class="sub"><a href="#c3-2">3.2 警告が出たとき</a></li>
+    <li class="sub"><a href="#c3-3">3.3 案件を記録する</a></li>
+    <li class="sub"><a href="#c3-4">3.4 「その他」と右クリック</a></li>
+    <li><a href="#c4">4. トレイと終了</a></li>
+    <li><a href="#c5">5. サインインが切れたとき</a></li>
+    <li><a href="#c6">6. 保険会社への催促メール</a></li>
+    <li><a href="#c7">7. 設定項目の一覧</a></li>
+    <li><a href="#c8">8. バックアップと復元</a></li>
+    <li><a href="#c9">9. インストールと更新</a></li>
+    <li><a href="#c10">10. こんなときは</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="cover">
+  <p>特退金脱退 処理漏れ防止アプリ（v1.1.0）</p>
+  <h1>操作マニュアル</h1>
+  <p class="lead">画面の写真つきで、毎日の使い方をまとめました。導入や技術の説明は <code>README.md</code>、業務の決まりごとは仕様書を見てください。<br>
+  ※ この資料の画面は、架空の会社・案件番号で作った見本です。</p>
+</header>
+
+<!-- 1 -->
+<section class="chap" id="c1">
+  <h2><span class="n">1</span>このアプリでできること</h2>
+  <p>特退金の脱退案件で、次の2つの漏れを防ぎます。</p>
+  <div class="flow">
+    <div class="card"><b>漏れ① 書類が届かないまま</b>案件を作ったのに、書類が届かないまま止まっている。</div>
+    <div class="card"><b>漏れ② WEB処理の忘れ</b>書類が届いたのに、WEB処理を忘れている。</div>
+  </div>
+  <p>Outlook に届く案件メールから、案件の一覧（受付簿）を自動で作ります。期限を過ぎた案件は、一覧で<b>赤く表示</b>し、管理職へ<b>メールで知らせます</b>。</p>
+  <figure>
+    <img src="img/main.png" alt="アプリのメイン画面。警告のある案件が赤く表示されている">
+    <figcaption>メイン画面。期限を過ぎた案件が、赤い行で表示されます（画像をクリックすると、原寸で開きます）。</figcaption>
+  </figure>
+</section>
+
+<!-- 2 -->
+<section class="chap" id="c2">
+  <h2><span class="n">2</span>最初の設定（1回だけ）</h2>
+  <ol class="steps">
+    <li>アプリを起動し、画面右下の「<b>その他</b>」→「<b>設定</b>」を開きます。
+      <figure class="small tight"><img src="img/menu_more.png" alt="「その他」メニュー。一番下に「設定」がある"><figcaption>「その他」メニューの一番下が「設定」です。</figcaption></figure></li>
+    <li>「<b>接続</b>」に、テナントID・クライアントID・Outlook のフォルダ名を入力します（値は管理者から受け取ります）。</li>
+    <li>「<b>通知</b>」に、警告メールを受け取る管理職の宛先を入力します（2名まで）。</li>
+    <li>「<b>接続テスト</b>」を押して、Microsoft にサインインします。「フォルダが見つかりました」と出れば成功です。</li>
+    <li>「<b>Windows起動時に自動で起動する</b>」にチェックを入れて、「<b>Save</b>」を押します。</li>
+  </ol>
+  <div class="grid">
+    <figure><img src="img/settings_1.png" alt="設定画面の上部。接続、判定、警告の欄"><figcaption>設定画面（上）：接続・判定・警告</figcaption></figure>
+    <figure><img src="img/settings_2.png" alt="設定画面の中ほど。通知、保険会社への催促、催促メールの文面"><figcaption>設定画面（中）：通知・催促</figcaption></figure>
+    <figure><img src="img/settings_3.png" alt="設定画面の下部。動作の欄"><figcaption>設定画面（下）：動作</figcaption></figure>
+  </div>
+  <p>設定画面は縦にスクロールできます。「接続テスト」と「Save」は、画面の下に常に表示されています。</p>
+  <div class="callout"><b class="t">保険会社への催促メールを使う場合</b>「<a href="#c6">6. 保険会社への催促メール</a>」の設定もしてください。</div>
+</section>
+
+<!-- 3 -->
+<section class="chap" id="c3">
+  <h2><span class="n">3</span>毎日の使い方</h2>
+  <p>アプリは、Windows を起動すると自動で立ち上がり、トレイ（画面右下）に常駐します。メールは、設定した間隔（初期値30分）で自動で取り込みます。<b>普段は、何も操作しなくても動き続けます。</b></p>
+  <p>やることは、次の2つです。</p>
+  <div class="flow">
+    <div class="card"><b>① 書類が届いたら</b>到着を記録する（<a href="#c3-3">3.3</a>）</div>
+    <div class="card"><b>② 警告が出たら</b>対応する（<a href="#c3-2">3.2</a>）</div>
+  </div>
+
+  <h3 id="c3-1"><span class="n">3.1</span>画面の見方</h3>
+  <figure>
+    <div class="shot">
+      <img src="img/main_selected.png" alt="番号つきの画面の説明">
+      <span class="pin" style="left:97.5%;top:4.5%">1</span>
+      <span class="pin" style="left:12.2%;top:11.6%">2</span>
+      <span class="pin" style="left:97.5%;top:11.6%">3</span>
+      <span class="pin" style="left:50%;top:78%">4</span>
+      <span class="pin" style="left:1.2%;top:87.6%">5</span>
+      <span class="pin" style="left:80.4%;top:87.6%">6</span>
+      <span class="pin" style="left:86.8%;top:87.6%">7</span>
+      <span class="pin" style="left:40%;top:97.6%">8</span>
+    </div>
+  </figure>
+  <ol class="legend">
+    <li><b>バナー</b>：<span class="tag green">緑</span>＝警告なし、<span class="tag red">赤</span>＝警告あり（件数を表示）、<span class="tag amber">黄</span>＝サインイン切れ（<a href="#c5">5章</a>）。</li>
+    <li><b>表示</b>（プルダウン）：「未完了のみ」「すべて」「警告のみ」「不備のみ」から選びます。</li>
+    <li><b>検索</b>：案件番号・会社名・備考で探せます。検索中は、処理済の案件も表示します。</li>
+    <li><b>一覧</b>：案件が1行ずつ並びます。<b>赤い行が警告の案件</b>です。見出しをクリックすると並び替え、見出しをドラッグすると列の順番を変えられます（次回も引き継ぎます）。</li>
+    <li><b>記録のボタン</b>：選んだ案件の状態に合うものだけ押せます（<a href="#c3-3">3.3</a>）。</li>
+    <li><b>元に戻す</b>：直前の操作を取り消します（<kbd>Ctrl</kbd>+<kbd>Z</kbd>）。</li>
+    <li><b>今すぐ更新・その他</b>：すぐにメールを取り込む／各種の操作と設定（<a href="#c3-4">3.4</a>）。</li>
+    <li><b>最終更新</b>：下部の左側に、「最終更新」の時刻と、取り込んだ件数が出ます。</li>
+  </ol>
+
+  <div class="grid">
+    <figure><img src="img/banner_ok.png" alt="緑のバナー「警告なし」" width="560"><figcaption><span class="tag green">緑</span> 警告なし</figcaption></figure>
+    <figure><img src="img/banner_alert.png" alt="赤いバナー「警告 4 件」" width="560"><figcaption><span class="tag red">赤</span> 警告あり（件数を表示）</figcaption></figure>
+    <figure><img src="img/banner_auth.png" alt="黄色いバナー「サインインが切れています」" width="560"><figcaption><span class="tag amber">黄</span> サインイン切れ</figcaption></figure>
+  </div>
+
+  <h4 style="margin:20px 0 4px">状態</h4>
+  <div class="tl">
+    <span class="st">書類待ち</span><span class="ar">→</span>
+    <span class="st alt">不備（補正待ち）</span><span class="ar">→</span>
+    <span class="st">書類到着</span><span class="ar">→</span>
+    <span class="st fin">処理済</span>
+  </div>
+  <table>
+    <tr><th>状態</th><th>意味</th></tr>
+    <tr><td class="k">書類待ち</td><td>案件を作成し、書類が届くのを待っている</td></tr>
+    <tr><td class="k">不備（補正待ち）</td><td>不備を連絡し、補正の書類を待っている</td></tr>
+    <tr><td class="k">書類到着</td><td>書類が届き、WEB処理を待っている</td></tr>
+    <tr><td class="k">処理済</td><td>処理が完了した（グレーで表示）</td></tr>
+  </table>
+
+  <h4 style="margin:20px 0 4px">警告</h4>
+  <p>次の3種類です。<b>営業日</b>で数え、日数は設定で変えられます。</p>
+  <table>
+    <tr><th>警告</th><th>条件</th><th>初期値</th></tr>
+    <tr><td class="k">書類未着</td><td>書類待ちのまま、案件作成日から基準日数以上</td><td>7営業日</td></tr>
+    <tr><td class="k">補正未着</td><td>不備を連絡した日から基準日数以上、補正書類が届かない</td><td>7営業日</td></tr>
+    <tr><td class="k">未処理</td><td>書類到着日から基準日数以上、処理が済まない</td><td>3営業日</td></tr>
+  </table>
+  <figure>
+    <img src="img/main_alert_only.png" alt="表示を「警告のみ」にした画面。警告の案件だけが並ぶ">
+    <figcaption>表示を「警告のみ」にすると、対応が必要な案件だけが並びます。</figcaption>
+  </figure>
+
+  <h3 id="c3-2"><span class="n">3.2</span>警告が出たとき</h3>
+  <p>新しい警告が出ると、トレイから吹き出しが出ます。画面が隠れているときは、画面が前面に出ます。管理職には、警告のメールも自動で届きます（同じ案件・同じ種類は1日1回まで）。</p>
+  <p>一覧で赤い案件を確認し、書類の確認・WEB処理など、必要な対応をします。対応したら、次の記録をします。</p>
+
+  <h3 id="c3-3"><span class="n">3.3</span>案件を記録する</h3>
+  <p>一覧で案件の行を選んで、下のボタンを押します。ボタンは、選んだ案件の状態に合うものだけ押せます。日付を聞かれるので、入力します。</p>
+  <div class="grid">
+    <figure><img src="img/buttons.png" alt="案件を1件選んだときの下部のボタン" width="760"><figcaption>案件を1件選ぶと、押せるボタンが青く（有効に）なります。</figcaption></figure>
+  </div>
+  <div class="grid" style="align-items:center">
+    <figure class="small tight"><img src="img/dialog_date.png" alt="日付を入力するダイアログ"><figcaption>日付の入力（初期値は今日）。カレンダーからも選べます。</figcaption></figure>
+  </div>
+  <table>
+    <tr><th>ボタン</th><th>いつ使うか</th></tr>
+    <tr><td class="k">書類が届いた</td><td>書類が届いたとき（書類到着日を記録する）</td></tr>
+    <tr><td class="k">不備を連絡した</td><td>書類に不備があり、連絡したとき（不備連絡日を記録する）</td></tr>
+    <tr><td class="k">処理済にする</td><td>WEB処理が完了したとき（処理済日を記録する）</td></tr>
+    <tr><td class="k">元に戻す</td><td>直前の操作を取り消す（<kbd>Ctrl</kbd>+<kbd>Z</kbd>。直前の10回まで）</td></tr>
+    <tr><td class="k">今すぐ更新</td><td>すぐにメールを取り込みたいとき</td></tr>
+  </table>
+  <ul>
+    <li><kbd>Ctrl</kbd>・<kbd>Shift</kbd>キーで複数の案件を選ぶと、<b>まとめて同じ日付を記録</b>できます。ボタンには対象の件数が付きます。</li>
+    <li>処理済の案件には、到着・不備・処理済を記録できません。</li>
+  </ul>
+  <figure><img src="img/buttons_multi.png" alt="2件選んだときのボタン。「（2件）」と表示される" width="760"><figcaption>2件を選ぶと、ボタンに「（2件）」と出ます。</figcaption></figure>
+  <div class="callout warn"><b class="t">書類到着の記録を忘れずに</b>「処理完了メール」が届くと、案件は自動で処理済になります。<b>書類到着を記録していなかった場合</b>は、備考に「書類到着日の記録なし」と残ります。書類が届いたら、忘れずに記録してください。</div>
+
+  <h3 id="c3-4"><span class="n">3.4</span>「その他」メニューと右クリック</h3>
+  <p>「その他」ボタンか、行の右クリックから、次の操作ができます（案件をダブルクリックすると、日付を修正できます）。</p>
+  <div class="grid">
+    <figure class="small tight"><img src="img/menu_more.png" alt="「その他」メニュー"><figcaption>「その他」ボタンのメニュー</figcaption></figure>
+    <figure class="small tight"><img src="img/menu_context.png" alt="行を右クリックしたときのメニュー"><figcaption>行を右クリックしたメニュー</figcaption></figure>
+  </div>
+  <ul>
+    <li><b>案件を追加</b>：メールが取り込めなかった案件を、手で足します。</li>
+    <li><b>日付を修正</b>：日付の入れ間違いを直します。チェックを外した日付は、空になります。</li>
+    <li><b>会社名を編集／備考を編集</b></li>
+    <li><b>書類到着を取り消す／不備を取り消す</b></li>
+    <li><b>CSV出力</b>：Excelで開ける形式で、一覧を書き出します。</li>
+    <li><b>設定</b></li>
+  </ul>
+  <div class="grid">
+    <figure class="small tight"><img src="img/dialog_edit_dates.png" alt="日付を修正するダイアログ"><figcaption>日付を修正</figcaption></figure>
+    <figure class="small tight"><img src="img/dialog_add_case.png" alt="案件を追加するダイアログ"><figcaption>案件を追加</figcaption></figure>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="chap" id="c4">
+  <h2><span class="n">4</span>トレイと終了</h2>
+  <ul>
+    <li>ウィンドウの <b>×</b> で閉じても、アプリはトレイに残って、メールの確認を続けます。</li>
+    <li>トレイのアイコンをクリックすると、画面が開きます。右クリックすると、「開く」「今すぐ更新」「終了」のメニューが出ます。</li>
+    <li>アイコンの色は、<span class="tag green">緑</span>＝正常、<span class="tag red">赤</span>＝警告またはサインイン切れです。</li>
+    <li>1台のPCで起動できるのは1つだけです。2つ目を起動すると、すでにある画面が前面に出ます。</li>
+  </ul>
+  <figure class="small tight"><img src="img/menu_tray.png" alt="トレイのメニュー。開く、今すぐ更新、終了"><figcaption>トレイのアイコンを右クリックしたメニュー</figcaption></figure>
+  <div class="callout danger"><b class="t">アプリを終了するには</b>トレイのアイコンを右クリックして「<b>終了</b>」を選びます。（×ボタンでは終了しません）</div>
+</section>
+
+<!-- 5 -->
+<section class="chap" id="c5">
+  <h2><span class="n">5</span>サインインが切れたとき</h2>
+  <p>Microsoft 365 のサインインが切れると、メールを取り込めなくなります。このとき、次の表示が出ます。</p>
+  <ul>
+    <li>画面上部が、黄色の「⚠ サインインが切れています。設定画面の『接続テスト』で再サインインしてください」に変わる。</li>
+    <li>トレイのアイコンが、赤になる。</li>
+    <li>検知した日に1回、案内のダイアログが出る。</li>
+  </ul>
+  <figure><img src="img/banner_auth.png" alt="黄色いバナー" width="900"></figure>
+  <div class="callout"><b class="t">対処</b>「その他」→「設定」→「<b>接続テスト</b>」を押して、サインインし直します。「Save」を押すと、すぐにメールを取り込みます。接続テストだけで閉じたときは、次の定期取り込みで、バナーが消えます。</div>
+</section>
+
+<!-- 6 -->
+<section class="chap" id="c6">
+  <h2><span class="n">6</span>保険会社への催促メール</h2>
+  <p>書類が届かない案件について、保険会社へ催促のメールを送れます。<b>自動では送らず、必ず送る前に確認します。</b></p>
+
+  <h3><span class="n">6.1</span>設定</h3>
+  <p>「その他」→「設定」の次の項目を入力します。</p>
+  <table>
+    <tr><th>項目</th><th>内容</th></tr>
+    <tr><td class="k">保険会社の宛先</td><td>催促メールの宛先。複数のときは <code>;</code> で区切る。<b>空欄の間は、この機能は動かない</b></td></tr>
+    <tr><td class="k">催促の間隔</td><td>案件作成日から、何営業日ごとに催促するか（初期値7）</td></tr>
+    <tr><td class="k">件名</td><td>件名。<code>{count}</code> と書くと、案件の件数に置き換わる</td></tr>
+    <tr><td class="k">本文の冒頭／末尾</td><td>本文の最初と最後の文章。案件の一覧は、この間に自動で入る</td></tr>
+  </table>
+  <figure><img src="img/settings_2.png" alt="設定画面の催促の欄" width="560"><figcaption>設定画面の「保険会社への催促」と「催促メールの文面」</figcaption></figure>
+
+  <h3><span class="n">6.2</span>送り方</h3>
+  <ul>
+    <li>対象は、状態が「書類待ち」の案件です。案件作成日から、間隔の営業日（例: 7、14、21営業日目）に達すると、候補になります。</li>
+    <li>起動時と取り込みのあとに、候補があれば、確認の画面が出ます。送る案件にチェックを入れ、メールの内容を見て、次のどれかを選びます。</li>
+  </ul>
+  <figure><img src="img/dialog_reminder.png" alt="催促メールの確認画面。案件の一覧とメールのプレビュー、送信・今回は送らない・後での3つのボタン"><figcaption>確認の画面。上で送る案件を選び、下でメールの内容を確認します。</figcaption></figure>
+  <table>
+    <tr><th>ボタン</th><th>動き</th></tr>
+    <tr><td class="k">送信</td><td>チェックした案件を、1通にまとめて送る。チェックを外した案件は、その区切りでは、もう聞かない</td></tr>
+    <tr><td class="k">今回は送らない</td><td>送らない。その区切りでは、もう聞かない</td></tr>
+    <tr><td class="k">後で</td><td>何も記録しない。次の機会に、また確認する</td></tr>
+  </table>
+  <ul>
+    <li>同じ案件は、同じ区切りでは1回しか聞きません。さらに日数がたって、次の区切りに達すると、また候補になります。</li>
+    <li>送信に失敗したときは、何も記録せず、次の機会に、また確認します。</li>
+  </ul>
+  <div class="callout danger"><b class="t">実際に保険会社へ届きます</b>メールは、サインインしている本人のアドレスから、実際に保険会社へ届きます。最初に試すときは、<b>宛先を自分のアドレスにしてください。</b></div>
+</section>
+
+<!-- 7 -->
+<section class="chap" id="c7">
+  <h2><span class="n">7</span>設定項目の一覧</h2>
+  <table>
+    <tr><th>グループ</th><th>項目</th><th>内容</th></tr>
+    <tr><td class="k">接続</td><td>テナントID・クライアントID・Outlookのフォルダ名</td><td>Microsoft 365 への接続情報</td></tr>
+    <tr><td class="k">判定</td><td>案件作成メール・処理完了メール</td><td>件名に含まれる言葉（初期値は、特退金脱退案件作成／特退金制度申し込み）</td></tr>
+    <tr><td class="k">警告</td><td>3つの基準日数</td><td>書類未着・未処理・補正待ちの警告を出す営業日数</td></tr>
+    <tr><td class="k">通知</td><td>管理職1・2の宛先、自動送信</td><td>警告メールの宛先と、送るかどうか</td></tr>
+    <tr><td class="k">保険会社への催促</td><td>宛先・間隔</td><td><a href="#c6">6章</a></td></tr>
+    <tr><td class="k">催促メールの文面</td><td>件名・冒頭・末尾</td><td><a href="#c6">6章</a></td></tr>
+    <tr><td class="k">動作</td><td>同期の間隔</td><td>メールを取り込む間隔（初期値30分）</td></tr>
+    <tr><td class="k">動作</td><td>初回の取り込み範囲</td><td>最初に何日前までのメールを取り込むか（初期値60日）</td></tr>
+    <tr><td class="k">動作</td><td>Windows起動時に自動で起動する</td><td>自動起動するかどうか</td></tr>
+    <tr><td class="k">動作</td><td>新しい版を自動で確認する</td><td>新しい版の通知を受け取るかどうか（初期値はオン。<a href="#c9">9章</a>）</td></tr>
+  </table>
+  <figure><img src="img/settings_1.png" alt="設定画面の上部" width="420"></figure>
+  <p>数値の欄は、マウスのホイールでは変わりません（上下のボタンか、キーボードで変えます）。</p>
+</section>
+
+<!-- 8 -->
+<section class="chap" id="c8">
+  <h2><span class="n">8</span>バックアップと復元</h2>
+  <ul>
+    <li>データは、<code>%APPDATA%\TokutaiApp\</code> に保存されます。</li>
+    <li>バックアップは、1日1回、<code>backup</code> フォルダに自動で残ります（30世代、約1か月分）。</li>
+    <li>処理済から1年（365日）たった案件は、自動で削除されます。必要な控えは、「その他」→「CSV出力」で書き出しておきます。</li>
+  </ul>
+  <h3><span class="n">8.1</span>復元するとき</h3>
+  <ol class="steps">
+    <li>アプリを<b>終了</b>します（<a href="#c4">4章</a>）。</li>
+    <li>戻したい日の <code>backup\tokutai_YYYYMMDD.db</code> を、<code>tokutai.db</code> の名前でコピーして、置き換えます。</li>
+    <li>アプリを起動します。</li>
+  </ol>
+</section>
+
+<!-- 9 -->
+<section class="chap" id="c9">
+  <h2><span class="n">9</span>インストールと更新</h2>
+  <h3><span class="n">9.1</span>インストール</h3>
+  <ol class="steps">
+    <li>GitHub の Release（<a href="https://github.com/mozu93/tokutaikin/releases" target="_blank" rel="noopener">https://github.com/mozu93/tokutaikin/releases</a>）から、<code>TokutaiApp-Setup-&lt;版&gt;.exe</code> を取得します。</li>
+    <li>ダブルクリックして、画面の案内に従って進めます（管理者権限は要りません）。</li>
+    <li>完了すると、アプリが起動します。デスクトップとスタートメニューに、ショートカットができます。</li>
+    <li>「<a href="#c2">2. 最初の設定</a>」を行います。</li>
+  </ol>
+  <div class="callout warn"><b class="t">「WindowsによってPCが保護されました」と出たとき</b>「<b>詳細情報</b>」を押し、「<b>実行</b>」を選びます（このインストーラーには、署名がないためです）。</div>
+  <p>アンインストールは、Windows の「設定」→「アプリ」→「インストールされているアプリ」から行います。受付簿や設定（<code>%APPDATA%\TokutaiApp\</code>）は、アンインストールしても残ります。</p>
+
+  <h3><span class="n">9.2</span>新しい版の通知と更新</h3>
+  <p>新しい版が公開されると、アプリが自動で気づきます（起動の少しあとと、1日1回、確認します）。</p>
+  <figure><img src="img/banner_update.png" alt="青いバナー「新しい版 1.2.0 があります。」と「更新する」ボタン" width="900"><figcaption>画面上部に、青いバナーと「更新する」ボタンが出ます。</figcaption></figure>
+  <ul>
+    <li>画面を開いているときは、変更点の案内も出ます。画面が隠れているときは、トレイから吹き出しで知らせます。</li>
+    <li><b>「更新する」を押したときだけ、更新します。</b>押すまでは、何も変わりません。「後で」を選べば、そのまま使い続けられます。</li>
+    <li>更新すると、アプリが終了し、インストールのあと、自動で起動し直します。受付簿・設定・サインイン情報は、そのまま使えます。</li>
+    <li>更新の前後で、メールの取り込みや案件の記録を、途中にしないよう、ほかの操作が終わってから押してください。</li>
+  </ul>
+  <figure><img src="img/dialog_update.png" alt="新しい版の案内ダイアログ。変更点と「更新する」「後で」のボタン" width="620"><figcaption>案内のダイアログ。変更点を見て、「更新する」か「後で」を選びます。</figcaption></figure>
+  <p>更新に失敗したときは、メッセージが出ます。しばらくしてから、もう一度試してください（今のアプリは、そのまま使えます）。</p>
+  <p>更新の通知が不要なときは、設定の「新しい版を自動で確認する」のチェックを外します。</p>
+</section>
+
+<!-- 10 -->
+<section class="chap" id="c10">
+  <h2><span class="n">10</span>こんなときは</h2>
+  <table>
+    <tr><th>状況</th><th>対処</th></tr>
+    <tr><td class="k">メールが取り込まれない</td><td>画面上部に黄色のバナーが出ていれば、<a href="#c5">5章</a>の再サインインをする。出ていなければ、画面下部のエラー表示を見る。設定のフォルダ名・件名のキーワードも確認する</td></tr>
+    <tr><td class="k">案件番号を読み取れないメールがある</td><td>画面下部にエラーが出る。メールの内容を確認し、必要なら「案件を追加」で手で足す</td></tr>
+    <tr><td class="k">会社名が空、または「受付メール未確認」と出る</td><td>処理完了メールが、案件作成メールより先に届いた案件。案件作成メールが届くと、自動で補われる。急ぐときは「会社名を編集」で直す</td></tr>
+    <tr><td class="k">誤って記録した</td><td>「元に戻す」（<kbd>Ctrl</kbd>+<kbd>Z</kbd>）。取り消せない場合は、「日付を修正」「書類到着を取り消す」「不備を取り消す」で直す</td></tr>
+    <tr><td class="k">画面が見つからない</td><td>トレイのアイコンをクリックする。タスクバーに出ていないときも、トレイに残っている</td></tr>
+    <tr><td class="k">古いデータを戻したい</td><td><a href="#c8">8章</a>の復元をする</td></tr>
+    <tr><td class="k">新しい版の通知が出ない</td><td>設定の「新しい版を自動で確認する」がオンか確認する。通信できない環境では、確認できない。次の確認（1日1回）を待つか、アプリを起動し直す</td></tr>
+  </table>
+  <footer>特退金脱退 処理漏れ防止アプリ v1.1.0 操作マニュアル</footer>
+</section>
+</main>
+</div>
+<script>
+  // 画像をクリックすると、原寸で別のタブに開く
+  document.querySelectorAll('figure img').forEach(function (img) {
+    img.style.cursor = 'zoom-in';
+    img.title = 'クリックで原寸表示';
+    img.addEventListener('click', function () { window.open(img.src, '_blank'); });
+  });
+</script>
+</body>
+</html>
