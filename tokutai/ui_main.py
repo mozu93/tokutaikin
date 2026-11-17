@@ -13,14 +13,17 @@ from PySide6.QtWidgets import (
     QMenu, QMessageBox, QPlainTextEdit, QPushButton, QSystemTrayIcon, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget,
 )
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from . import __version__, db, service, updater
+from . import staff as staff_mod
 from .corporate import CompanyNormalizer, load_table
 from . import paths, settings as settings_mod
 from .bizdays import add_business_days
 from .db import Case
 from .graph import GraphClient
 from .ui_settings import SettingsDialog
+from .ui_staff import ConnectionDialog, StaffManageDialog, StaffSelectDialog, apply_connection
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +34,7 @@ RED_BG = QColor(255, 205, 205)
 GRAY_FG = QColor(130, 130, 130)
 WAKE_TICK_SEC = 30  # スリープ復帰を見張る周期
 WAKE_GAP_SEC = 180  # 周期がこれ以上空いたら、スリープしていたとみなす
+SHARED_REFRESH_MIN = 5  # 共有のデータベースを使うとき、ほかの職員の変更を取り込み直す間隔（分）
 HOLD_BG =QColor(255, 244, 204)  # 保留中（事業所に連絡済みで待っている）
 
 
@@ -326,12 +330,18 @@ class MainWindow(QMainWindow):
         self._totals = {"new": 0, "done": 0, "notified": 0}
         self._last_update = "-"
         self.undo_stack = service.UndoStack()
+        self._is_operator = True  # 担当者か（1台用では常に True）。共有のときは reload のたびに確かめ直す
+        self._db_error = False  # 共有のデータベースにつながらない間
 
         self._build_ui()
         self._build_tray()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.sync)
         self._apply_timer()
+        self.refresh_timer = QTimer(self)  # 共有のとき、ほかの職員の変更を、画面に取り込み直す
+        self.refresh_timer.timeout.connect(self.reload)
+        if db.is_shared():
+            self.refresh_timer.start(SHARED_REFRESH_MIN * 60 * 1000)
         self.reload()
         if not start_minimized:
             self.show_front()
@@ -453,6 +463,10 @@ class MainWindow(QMainWindow):
         m_file = bar.addMenu("ファイル(&F)")
         m_file.addAction("CSV出力", self.export_csv)
         m_file.addAction("設定", self.open_settings)
+        m_file.addAction("データの共有設定", self.open_connection)
+        if db.is_shared():
+            m_file.addAction("職員の切り替え", self.switch_staff)
+            m_file.addAction("職員の管理（担当者マーク）", self.manage_staff)
         m_file.addSeparator()
         m_file.addAction("終了", self.quit_app)
         m_help = bar.addMenu("ヘルプ(&H)")
@@ -493,9 +507,9 @@ class MainWindow(QMainWindow):
         self.tray = QSystemTrayIcon(self.icon_ok, self)
         menu = QMenu()
         a_open = QAction("開く", self); a_open.triggered.connect(self.show_front)
-        a_sync = QAction("今すぐ更新", self); a_sync.triggered.connect(self.sync)
+        self.a_sync = QAction("今すぐ更新", self); self.a_sync.triggered.connect(self.sync)
         a_quit = QAction("終了", self); a_quit.triggered.connect(self.quit_app)
-        for a in (a_open, a_sync):
+        for a in (a_open, self.a_sync):
             menu.addAction(a)
         menu.addSeparator()
         menu.addAction(a_quit)
@@ -556,8 +570,21 @@ class MainWindow(QMainWindow):
 
     def reload(self) -> None:
         today = date.today()
-        with db.session() as s:
-            cases = list(s.scalars(select(Case)))
+        try:
+            with db.session() as s:
+                cases = list(s.scalars(select(Case)))
+            if db.is_shared():
+                settings_mod.load_shared(self.st)  # ほかの職員が変えた共有の設定を、取り込む
+        except SQLAlchemyError:
+            if not self._db_error:
+                log.exception("共有のデータベースを読めませんでした")
+            self._db_error = True
+            self.banner.setText("⚠ 共有のデータベースにつながりません。ネットワークとサーバーを確かめてください（つながると自動で戻ります）")
+            self.banner.setStyleSheet("background:#f0b400;color:black;font-size:18px;font-weight:bold;padding:8px;")
+            self.tray.setIcon(self.icon_warn)
+            return
+        self._db_error = False
+        self._refresh_role()
         alerts = {a.case_no: a for a in service.collect_alerts(cases, today, self.st)}
         rows = service.select_rows(cases, alerts, self.filter.currentText(), self.search.text(),
                                    self.st.sort_column, self.st.sort_ascending, today, self.norm.formal_words)
@@ -683,7 +710,36 @@ class MainWindow(QMainWindow):
         self._known_alerts = keys
         self._first_check = False
 
+    def can_import(self) -> bool:
+        """メールの取り込み・管理職への通知・保険会社への催促ができるか。
+
+        1台用は常にできる。共有のデータベースでは、担当者マークのある職員だけ（毎回データベースで確かめる）。
+        """
+        if not db.is_shared():
+            return True
+        try:
+            with db.session() as s:
+                return staff_mod.is_operator(s, self.st.staff_name)
+        except SQLAlchemyError:
+            log.exception("担当者かどうかを確かめられませんでした")
+            return False
+
+    def _refresh_role(self) -> None:
+        """担当者かどうかで、ボタンの文言と画面の題名を切り替える。"""
+        self._is_operator = self.can_import()
+        label = "今すぐ更新" if self._is_operator else "最新の情報に更新"
+        self.btn_sync.setText(label)
+        self.a_sync.setText(label)
+        title = "特退金脱退 処理漏れ防止"
+        if db.is_shared() and self.st.staff_name:
+            title += f"　{self.st.staff_name}さん" + ("（担当者）" if self._is_operator else "")
+        self.setWindowTitle(title)
+        self.tray.setToolTip(title)
+
     def _update_status(self) -> None:
+        if not self._is_operator:
+            self.status.setText("共有の受付簿を表示中（メールの取り込みは、担当者が行います）")
+            return
         t = self._totals
         err = f"　｜　⚠ {self._last_error[0]}" if self._last_error else ""
         self.status.setText(
@@ -702,6 +758,9 @@ class MainWindow(QMainWindow):
 
     def sync(self, *_args) -> None:
         if self._running:
+            return
+        if not self.can_import():  # 担当者ではない職員は、メールを読まず、共有の受付簿を読み直すだけ
+            self.reload()
             return
         if not self.st.is_connectable():
             self._last_error = ["設定画面で接続情報を入力してください。"]
@@ -1077,10 +1136,31 @@ class MainWindow(QMainWindow):
         self._edit_text("会社名を編集", "会社名", "company", False)
 
     def open_settings(self) -> None:
-        dlg = SettingsDialog(self.st, self)
+        dlg = SettingsDialog(self.st, self, operator=self.can_import())
         if dlg.exec():
             settings_mod.save(self.st)
+            settings_mod.save_shared(self.st)
             self._apply_timer()
             self._client = None
             self.reload()
             self.sync()
+
+    # ---------- 共有（職員・接続先） ----------
+    def manage_staff(self) -> None:
+        StaffManageDialog(self).exec()
+        self.reload()
+
+    def switch_staff(self) -> None:
+        dlg = StaffSelectDialog(self, self.st.staff_name)
+        if dlg.exec() and dlg.selected_name:
+            self.st.staff_name = dlg.selected_name
+            settings_mod.save(self.st)
+            self.reload()
+            self.sync()
+
+    def open_connection(self) -> None:
+        dlg = ConnectionDialog(self)
+        if dlg.exec() and dlg.result_cfg is not None:
+            if apply_connection(self, dlg.result_cfg, dlg.migrate):
+                QMessageBox.information(self, "データの共有設定", "接続先を保存しました。アプリを終了します。もう一度起動してください。")
+                self.quit_app()
