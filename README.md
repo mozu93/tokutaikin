@@ -3,7 +3,7 @@
 アクサ生命の特退金（特定退職金共済制度）脱退案件で、**書類の未着**と、書類到着後の**WEB処理漏れ**を防ぐ Windows 向けのデスクトップアプリです。
 Outlook に届く案件メールから受付簿を自動で作り、期限を過ぎた案件を画面で赤く知らせ、管理職へメールで通知します。
 
-**バージョン: 1.1.2**（変更点は `RELEASE_NOTES.md`）
+**バージョン: 1.2.0**（変更点は `RELEASE_NOTES.md`）
 
 - 紹介: [`docs/introduction-slides.html`](docs/introduction-slides.html)（同僚向けの紹介スライド。ダウンロードしてブラウザで開く）
 - 使い方: `MANUAL.md`（操作マニュアル。アプリの「ヘルプ」→「使い方」でも開く）
@@ -136,7 +136,7 @@ Windows ランナーは、消費時間が2倍に数えられる。タグは、�
 ```
 pip install pyinstaller
 pyinstaller --noconsole --onedir --name TokutaiApp --icon tokutai/data/app.ico --add-data "tokutai/data;tokutai/data" main.py
-iscc /DAppVersion=1.1.2 installer\TokutaiApp.iss     # Inno Setup 6 が必要。出力: installer\Output\
+iscc /DAppVersion=1.2.0 installer\TokutaiApp.iss     # Inno Setup 6 が必要。出力: installer\Output\
 ```
 
 アプリのアイコン（`tokutai/data/app.ico`）は、`python tools/make_icon.py` で作り直せる。
