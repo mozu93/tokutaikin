@@ -7,10 +7,11 @@ from logging.handlers import RotatingFileHandler
 
 from PySide6.QtGui import QIcon
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
-from tokutai import autostart, db, paths, settings as settings_mod
+from tokutai import autostart, connection, db, paths, settings as settings_mod, staff as staff_mod
 from tokutai.ui_main import MainWindow
+from tokutai.ui_staff import ConnectionDialog, StaffSelectDialog, apply_connection
 
 SERVER_NAME = "TokutaiShoribore-single-instance"
 
@@ -31,6 +32,51 @@ def set_app_identity(app: QApplication) -> None:
     icon = paths.app_icon_path()
     if icon.exists():
         app.setWindowIcon(QIcon(str(icon)))
+
+
+def choose_connection() -> connection.ConnConfig | None:
+    """データベースの接続先を決める。以前から使っているPCは、従来どおり、このPCの SQLite のまま（何も聞かない）。
+    はじめて起動するPC（受付簿がまだ無い）だけ、1台で使うか共有するかを聞く。"""
+    if connection.exists() or paths.db_path().exists():
+        return connection.load()
+    dlg = ConnectionDialog(None, connection.ConnConfig(), initial=True)
+    if not dlg.exec() or dlg.result_cfg is None:
+        return None
+    if not apply_connection(None, dlg.result_cfg, dlg.migrate):
+        return None
+    return dlg.result_cfg
+
+
+def open_database(cfg: connection.ConnConfig) -> connection.ConnConfig | None:
+    """データベースを開く。つながらないときは、理由を知らせて、接続先を直せるようにする。"""
+    while True:
+        try:
+            if not cfg.shared:
+                db.daily_backup()  # 1台用は、移行（列の追加）の前に、その日の最初のバックアップを取る
+            db.init(cfg.url(), shared=cfg.shared)
+            return cfg
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger(__name__).exception("データベースを開けません")
+            QMessageBox.critical(None, "データベースに接続できません", connection.explain(e))
+            dlg = ConnectionDialog(None, cfg, initial=True)
+            if not dlg.exec() or dlg.result_cfg is None:
+                return None
+            if apply_connection(None, dlg.result_cfg, dlg.migrate):
+                cfg = dlg.result_cfg
+
+
+def choose_staff(st: settings_mod.Settings) -> bool:
+    """共有のとき、だれが使っているかを決める。前回の職員が、いまも使用中なら、そのまま使う（聞かない）。"""
+    with db.session() as s:
+        row = staff_mod.get_by_name(s, st.staff_name)
+        if row is not None and row.is_active:
+            return True
+    dlg = StaffSelectDialog(None, st.staff_name)
+    if not dlg.exec() or not dlg.selected_name:
+        return False
+    st.staff_name = dlg.selected_name
+    settings_mod.save(st)
+    return True
 
 
 def main() -> int:
@@ -60,10 +106,14 @@ def main() -> int:
     server.listen(SERVER_NAME)
 
     setup_logging()
-    db.daily_backup()
-    db.init()
+    cfg = choose_connection()
+    cfg = open_database(cfg) if cfg else None
+    if cfg is None:
+        return 0
 
     st = settings_mod.load()
+    if cfg.shared and not choose_staff(st):
+        return 0
     if not st.autostart_initialized:  # 初回起動時にスタートアップへ登録
         try:
             autostart.set_enabled(st.autostart)

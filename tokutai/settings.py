@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field, fields
 
-from . import paths
+from . import db, paths
 
 
 @dataclass
@@ -36,6 +36,7 @@ class Settings:
     sort_column: str = ""  # 並び替えの列名。空は標準の順
     sort_ascending: bool = True
     column_order: list[str] = field(default_factory=list)  # 列の並び順（空は標準）
+    staff_name: str = ""  # このPCで、前回選んだ職員（共有のデータベースで使う。このPCだけの設定）
 
     def managers(self) -> list[str]:
         return [m.strip() for m in self.manager_emails if m and m.strip()]
@@ -47,6 +48,50 @@ class Settings:
 
     def is_connectable(self) -> bool:
         return bool(self.tenant_id.strip() and self.client_id.strip() and self.folder_name.strip())
+
+
+# 共有のデータベースにつないでいるときは、これらの設定を全員で共有する（データベースに置く）。
+# それ以外（Outlookの接続先、画面の並び順、自動起動など）は、このPCだけの設定。
+SHARED_FIELDS = (
+    "kw_create", "kw_done", "warn_docs_days", "warn_process_days", "warn_defect_days",
+    "manager_emails", "notify_enabled", "insurer_email", "remind_days",
+    "remind_subject", "remind_intro", "remind_outro",
+)
+SHARED_KEY = "shared_settings"
+
+
+def _fix_managers(s: Settings) -> None:
+    mails = list(s.manager_emails)[:2]
+    while len(mails) < 2:
+        mails.append("")
+    s.manager_emails = mails
+
+
+def load_shared(s: Settings) -> bool:
+    """共有の設定を、データベースから読んで s に反映する。まだ保存されていなければ False。"""
+    with db.session() as sess:
+        raw = db.get_meta(sess, SHARED_KEY, "")
+    if not raw:
+        return False
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return False
+    for k in SHARED_FIELDS:
+        if k in data:
+            setattr(s, k, data[k])
+    _fix_managers(s)
+    return True
+
+
+def save_shared(s: Settings) -> None:
+    """共有の設定を、データベースに保存する（共有のデータベースにつないでいるときだけ）。"""
+    if not db.is_shared():
+        return
+    data = {k: getattr(s, k) for k in SHARED_FIELDS}
+    with db.session() as sess:
+        db.set_meta(sess, SHARED_KEY, json.dumps(data, ensure_ascii=False))
+        sess.commit()
 
 
 def load() -> Settings:
@@ -63,14 +108,15 @@ def load() -> Settings:
                 setattr(s, k, v)
     if s.sort_column == "受付日":  # 列名の変更（受付日 → 案件作成日）への対応
         s.sort_column = "案件作成日"
-    mails = list(s.manager_emails)[:2]
-    while len(mails) < 2:
-        mails.append("")
-    s.manager_emails = mails
+    _fix_managers(s)
+    if db.is_shared() and not load_shared(s):
+        save_shared(s)  # 共有の設定がまだ無いときは、このPCの値を、全員の初期値にする
     return s
 
 
 def save(s: Settings) -> None:
-    paths.settings_path().write_text(
-        json.dumps(asdict(s), ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    data = asdict(s)
+    if db.is_shared():  # 共有の設定は、このPCのファイルには置かない（save_shared で、データベースへ）
+        for k in SHARED_FIELDS:
+            data.pop(k, None)
+    paths.settings_path().write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")

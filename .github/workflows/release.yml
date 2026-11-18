@@ -38,7 +38,7 @@ jobs:
         run: python -m pytest tests -q
 
       - name: exe のビルド（PySide6 のライセンス条件のため、1ファイルではなくフォルダ形式）
-        run: pyinstaller --noconsole --onedir --name TokutaiApp --icon tokutai/data/app.ico --add-data "tokutai/data;tokutai/data" main.py
+        run: pyinstaller --noconsole --onedir --name TokutaiApp --hidden-import psycopg2 --icon tokutai/data/app.ico --add-data "tokutai/data;tokutai/data" main.py
 
       - name: 文書とライセンスを同梱
         shell: pwsh

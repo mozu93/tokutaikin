@@ -19,7 +19,7 @@ class NoWheelSpinBox(QSpinBox):
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, s: Settings, parent=None):
+    def __init__(self, s: Settings, parent=None, operator: bool = True):
         super().__init__(parent)
         self.setWindowTitle("設定")
         self.setMinimumWidth(480)
@@ -69,6 +69,8 @@ class SettingsDialog(QDialog):
              [("件名（{count}=件数）", self.r_subject), ("本文の冒頭", self.r_intro), ("本文の末尾", self.r_outro)]),
             ("動作", [("同期の間隔", self.sync_min), ("初回の取り込み範囲", self.init_days), ("", self.auto), ("", self.upd)]),
         ):
+            if title == "接続" and not operator:  # メールを読むのは担当者だけ。ほかの職員には出さない
+                continue
             box = QGroupBox(title)
             form = QFormLayout(box)
             for label, w in rows:
@@ -78,7 +80,8 @@ class SettingsDialog(QDialog):
         test = QPushButton("接続テスト")
         test.clicked.connect(self._test)
         row = QHBoxLayout(); row.addWidget(test); row.addStretch()
-        root.addLayout(row)
+        if operator:
+            root.addLayout(row)
 
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self._save)
