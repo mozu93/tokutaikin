@@ -105,7 +105,7 @@
 <div class="layout">
 
 <nav aria-label="目次">
-  <div class="brand"><div class="logo">退</div><div><b>インストールマニュアル</b><span>v1.2.0</span></div></div>
+  <div class="brand"><div class="logo">退</div><div><b>インストールマニュアル</b><span>v1.2.1</span></div></div>
   <ol>
     <li><a href="#c1">1. 全体の流れ</a></li>
     <li><a href="#c2">2. 管理者の準備</a></li>
@@ -124,7 +124,7 @@
 
 <main>
 <header class="cover">
-  <p>特退金脱退 処理漏れ防止アプリ（v1.2.0）</p>
+  <p>特退金脱退 処理漏れ防止アプリ（v1.2.1）</p>
   <h1>インストールマニュアル</h1>
   <p class="lead">管理者がサーバーと Microsoft 365 を準備し、各PCにアプリを入れて、設定するまでの手順です。毎日の使い方は <a href="../manual/index.html" style="color:#9db9e6">操作マニュアル</a> を見てください。<br>
   ※ ホスト名・パスワードなどは見本です。実際の値に置き換えてください。</p>
@@ -353,7 +353,7 @@ host  tokutai  tokutai_app  192.168.0.0/24  scram-sha-256</code></pre>
     <li>リリース: <code>tokutai/__init__.py</code> の版と、<code>RELEASE_NOTES.md</code> を更新して、<code>vX.Y.Z</code> のタグを push すると、GitHub Actions が、テスト・インストーラー作成・SHA-256 作成・Release 公開を行います（タグと版が違うと失敗します）。</li>
     <li>インストーラーを手元で作る: PyInstaller で <code>dist\TokutaiApp</code> を作り、<code>iscc /DAppVersion=&lt;版&gt; installer\TokutaiApp.iss</code>（Inno Setup 6）。</li>
   </ul>
-  <footer>特退金脱退 処理漏れ防止アプリ v1.2.0 インストールマニュアル</footer>
+  <footer>特退金脱退 処理漏れ防止アプリ v1.2.1 インストールマニュアル</footer>
 </section>
 </main>
 </div>
