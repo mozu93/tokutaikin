@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT))
 from PySide6.QtCore import QEvent, QItemSelectionModel  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QScrollArea  # noqa: E402
 
-from tokutai import __version__, db, service, settings as settings_mod, updater  # noqa: E402
+from tokutai import __version__, connection, db, service, settings as settings_mod, staff, updater  # noqa: E402
 from tokutai.bizdays import add_business_days, business_days_between  # noqa: E402
 from tokutai.db import Case  # noqa: E402
 from tokutai.ui_main import (  # noqa: E402
@@ -32,6 +32,7 @@ from tokutai.ui_main import (  # noqa: E402
     ReminderDialog, UpdateDialog,
 )
 from tokutai.ui_settings import SettingsDialog  # noqa: E402
+from tokutai.ui_staff import ConnectionDialog, StaffManageDialog, StaffSelectDialog  # noqa: E402
 
 STYLE = (  # main.py と同じ
     "* { font-size: 13pt; }"
@@ -314,6 +315,48 @@ def main() -> int:
     sd.close()
 
     win.close()
+
+    # 15. 共有（複数の職員）。共有のデータベースの代わりに、一時フォルダの SQLite を「共有」として使う
+    print("共有の画面を保存します")
+    d = ConnectionDialog(win, connection.ConnConfig(
+        db_type=connection.DB_POSTGRESQL, host="db-server", port=5432, database="tokutai",
+        user="tokutai_app", password="dummy-password"))
+    d.show(); flush(); save(d, "dialog_connection.png"); d.close()
+
+    db.init(f"sqlite:///{Path(_tmp) / 'shared.db'}", shared=True)
+    seed(today)
+    with db.session() as s:
+        staff.add(s, "山田 太郎", is_operator=True)
+        staff.add(s, "佐藤 花子")
+        staff.add(s, "鈴木 一郎")
+    me = settings_mod.load()
+    me.staff_name = "佐藤 花子"
+    settings_mod.save(me)
+
+    d = StaffSelectDialog(None, "佐藤 花子")
+    d.show(); flush(); save(d, "dialog_staff_select.png"); d.close()
+    d = StaffManageDialog(None)
+    d.show(); flush(); save(d, "dialog_staff_manage.png"); d.close()
+
+    win2 = MainWindow(start_minimized=True)  # 担当者ではない職員（佐藤 花子）の画面
+    win2.tray.hide()
+    win2.tray.showMessage = lambda *a, **k: None
+    win2._known_alerts = set()
+    win2.resize(1700, 780)
+    win2.show()
+    flush(5)
+    win2.reload()
+    flush()
+    for t in (win2.timer, win2.update_timer, win2.refresh_timer):
+        t.stop()
+    menus = {m.title(): m for m in win2.menuBar().findChildren(QMenu)}
+    grab_menu(menus["ファイル(&F)"], "shared_menu_file.png")
+    select_rows(win2, ["A1024301"])
+    crop(win2, "shared_buttons.png", win2.centralWidget().mapTo(win2, win2.btn_arrived.geometry().topLeft()).y() - 10)
+    sd = SettingsDialog(settings_mod.load(), win2, operator=False)  # 担当者ではないと、「接続」の欄は出ない
+    sd.show(); flush(5)
+    save(sd, "settings_shared_user.png"); sd.close()
+    win2.close()
     return 0
 
 
