@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>特退金脱退 処理漏れ防止アプリ インストールマニュアル</title>
+<style>
+  :root {
+    --ink: #16233a; --sub: #5b6678; --line: #dfe5ee; --bg: #f4f6fa; --card: #ffffff;
+    --blue: #2f6fd0; --red: #d62f2f; --green: #2e9e4f; --amber: #f0b400;
+    --note-bg: #eef4fd; --warn-bg: #fff6e0; --danger-bg: #fdeceb;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.8; font-size: 16px;
+         font-family: 'Yu Gothic UI', 'Yu Gothic', Meiryo, 'Hiragino Sans', sans-serif; }
+  .layout { display: flex; align-items: flex-start; max-width: 1240px; margin: 0 auto; }
+  nav { position: sticky; top: 0; align-self: flex-start; width: 270px; flex: none; height: 100vh; overflow-y: auto;
+        padding: 24px 16px 24px 20px; font-size: 14px; }
+  nav .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  nav .logo { width: 42px; height: 42px; border-radius: 10px; background: var(--blue); color: #fff;
+              font-size: 26px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  nav .brand b { display: block; line-height: 1.3; }
+  nav .brand span { color: var(--sub); font-size: 12px; }
+  nav ol { list-style: none; margin: 0; padding: 0; }
+  nav li a { display: block; padding: 5px 10px; color: var(--ink); text-decoration: none; border-radius: 6px; line-height: 1.5; }
+  nav li a:hover { background: #e3e9f3; }
+  nav li.sub a { padding-left: 26px; color: var(--sub); font-size: 13px; }
+  main { flex: 1; min-width: 0; padding: 24px 24px 80px 8px; }
+  header.cover { background: #16233a; color: #f6f8fb; border-radius: 14px; padding: 36px 40px; margin-bottom: 28px; }
+  header.cover p { margin: 0; color: #9db9e6; font-size: 14px; }
+  header.cover h1 { margin: 6px 0 10px; font-size: 30px; line-height: 1.35; }
+  header.cover .lead { color: #d5dff0; font-size: 15px; }
+  section.chap { background: var(--card); border-radius: 14px; padding: 28px 36px 20px; margin-bottom: 24px;
+                 box-shadow: 0 1px 6px rgba(22, 35, 58, .08); }
+  h2 { margin: 0 0 14px; font-size: 24px; padding-bottom: 10px; border-bottom: 3px solid var(--blue); }
+  h2 .n { display: inline-block; min-width: 1.6em; color: var(--blue); }
+  h3 { margin: 30px 0 8px; font-size: 19px; }
+  h3 .n { color: var(--blue); margin-right: 4px; }
+  p { margin: 8px 0; }
+  ul, ol.steps { padding-left: 1.4em; }
+  li { margin: 4px 0; }
+  ol.steps { counter-reset: s; list-style: none; padding-left: 0; }
+  ol.steps > li { counter-increment: s; position: relative; padding-left: 40px; margin: 12px 0; }
+  ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: 2px; width: 28px; height: 28px; border-radius: 50%;
+                          background: var(--blue); color: #fff; font-weight: 700; font-size: 14px; text-align: center; line-height: 28px; }
+  code, kbd { font-family: Consolas, 'Courier New', monospace; background: #eef1f6; padding: 1px 6px; border-radius: 4px; font-size: .92em; }
+  kbd { border: 1px solid #c8d0de; border-bottom-width: 2px; background: #fff; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 15px; }
+  th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #eef3fb; white-space: nowrap; }
+  td.k { white-space: nowrap; font-weight: 700; }
+  figure { margin: 16px 0; }
+  figure img { display: block; max-width: 100%; height: auto; border: 1px solid #c9d2e0; border-radius: 8px;
+               box-shadow: 0 2px 10px rgba(22, 35, 58, .12); background: #fff; }
+  figure.small img { max-width: 380px; }
+  figure.tight img { display: inline-block; }
+  figcaption { margin-top: 6px; color: var(--sub); font-size: 13px; }
+  .shot { position: relative; display: inline-block; max-width: 100%; }
+  .shot img { display: block; max-width: 100%; height: auto; }
+  .pin { position: absolute; transform: translate(-50%, -50%); width: 26px; height: 26px; border-radius: 50%;
+         background: #e8590c; color: #fff; font-weight: 700; font-size: 14px; line-height: 26px; text-align: center;
+         border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+  .legend { counter-reset: l; list-style: none; padding: 0; margin: 12px 0; }
+  .legend li { position: relative; padding-left: 38px; margin: 8px 0; }
+  .legend li::before { counter-increment: l; content: counter(l); position: absolute; left: 0; top: 1px; width: 26px; height: 26px;
+                       border-radius: 50%; background: #e8590c; color: #fff; font-weight: 700; font-size: 14px; text-align: center; line-height: 26px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .grid figure { margin: 8px 0; }
+  .callout { border-left: 5px solid var(--blue); background: var(--note-bg); padding: 10px 16px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .callout.warn { border-color: var(--amber); background: var(--warn-bg); }
+  .callout.danger { border-color: var(--red); background: var(--danger-bg); }
+  .callout b.t { display: block; margin-bottom: 2px; }
+  .tag { display: inline-block; padding: 0 9px; border-radius: 999px; font-size: 13px; font-weight: 700; color: #fff; line-height: 1.7; }
+  .tag.red { background: var(--red); } .tag.green { background: var(--green); } .tag.amber { background: var(--amber); color: #000; }
+  .tag.blue { background: var(--blue); } .tag.gray { background: #8a93a3; }
+  .tl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+  .tl .st { padding: 6px 14px; border-radius: 8px; border: 2px solid var(--blue); background: #fff; font-weight: 700; }
+  .tl .st.alt { border-color: var(--amber); }
+  .tl .st.fin { border-color: #8a93a3; color: #6b7384; }
+  .tl .ar { color: var(--sub); }
+  .flow { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+  .flow .card { flex: 1 1 240px; border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; background: #fafbfd; }
+  .flow .card b { display: block; color: var(--blue); }
+  footer { color: var(--sub); font-size: 13px; text-align: center; margin-top: 30px; }
+  @media (max-width: 900px) {
+    .layout { display: block; }
+    nav { position: static; width: auto; height: auto; padding: 16px; }
+    main { padding: 0 12px 60px; }
+    section.chap { padding: 20px 18px 14px; }
+  }
+  @media print {
+    body { background: #fff; font-size: 13px; }
+    nav { display: none; }
+    main { padding: 0; }
+    section.chap { box-shadow: none; padding: 0 0 10px; break-inside: auto; }
+    figure, .callout, table { break-inside: avoid; }
+    h2, h3 { break-after: avoid; }
+    header.cover { background: #fff; color: #000; border: 1px solid #000; }
+    header.cover p, header.cover .lead { color: #333; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav aria-label="目次">
+  <div class="brand"><div class="logo">退</div><div><b>インストールマニュアル</b><span>v1.2.0</span></div></div>
+  <ol>
+    <li><a href="#c1">1. 全体の流れ</a></li>
+    <li><a href="#c2">2. 管理者の準備</a></li>
+    <li class="sub"><a href="#c2-1">2.1 Microsoft 365 にアプリを登録する</a></li>
+    <li class="sub"><a href="#c2-2">2.2 Outlook のフォルダを用意する</a></li>
+    <li class="sub"><a href="#c2-3">2.3 PostgreSQL を用意する（共有するとき）</a></li>
+    <li><a href="#c3">3. 各PCにインストールする</a></li>
+    <li><a href="#c4">4. 初期設定（1台で使うとき）</a></li>
+    <li><a href="#c5">5. 共有の設定（複数の職員で使うとき）</a></li>
+    <li><a href="#c6">6. 動作の確認</a></li>
+    <li><a href="#c7">7. 更新とアンインストール</a></li>
+    <li><a href="#c8">8. こんなときは</a></li>
+    <li><a href="#c9">9. 付録（保存先・開発者向け）</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="cover">
+  <p>特退金脱退 処理漏れ防止アプリ（v1.2.0）</p>
+  <h1>インストールマニュアル</h1>
+  <p class="lead">管理者がサーバーと Microsoft 365 を準備し、各PCにアプリを入れて、設定するまでの手順です。毎日の使い方は <a href="../manual/index.html" style="color:#9db9e6">操作マニュアル</a> を見てください。<br>
+  ※ ホスト名・パスワードなどは見本です。実際の値に置き換えてください。</p>
+</header>
+
+<!-- 1 -->
+<section class="chap" id="c1">
+  <h2><span class="n">1</span>全体の流れ</h2>
+  <p>このアプリは、Outlook に届く案件メールから受付簿を作ります。使い方は2通りです。</p>
+  <table>
+    <tr><th>使い方</th><th>受付簿の置き場所</th><th>向いている場合</th></tr>
+    <tr><td class="k">1台で使う</td><td>そのPC（SQLite）</td><td>1人（1台）で使う。サーバーは要りません</td></tr>
+    <tr><td class="k">複数の職員で共有する</td><td>社内の PostgreSQL サーバー</td><td>複数のPCの職員が、同じ受付簿を見て記録する。メールを読む人（担当者）を決める</td></tr>
+  </table>
+  <div class="flow">
+    <div class="card"><b>① 管理者の準備</b>Microsoft 365 にアプリを登録。共有するときは、PostgreSQL も用意（<a href="#c2">2章</a>）</div>
+    <div class="card"><b>② 各PCにインストール</b>インストーラーを取得し、本物か確かめて実行（<a href="#c3">3章</a>）</div>
+    <div class="card"><b>③ 設定</b>1台なら<a href="#c4">4章</a>、共有なら<a href="#c5">5章</a></div>
+    <div class="card"><b>④ 動作の確認</b>チェックリストで確かめる（<a href="#c6">6章</a>）</div>
+  </div>
+  <h3><span class="n">1.1</span>必要なもの</h3>
+  <table>
+    <tr><th>項目</th><th>内容</th></tr>
+    <tr><td class="k">PC</td><td>Windows 10 / 11（64ビット）。管理者権限は要りません（利用者のフォルダに入ります）</td></tr>
+    <tr><td class="k">メール</td><td>Microsoft 365 の Outlook（案件メールが届くアカウント）</td></tr>
+    <tr><td class="k">Microsoft 365 の管理者</td><td>アプリの登録と、権限への同意を行える人（<a href="#c2-1">2.1</a>）</td></tr>
+    <tr><td class="k">共有するとき</td><td>PostgreSQL のサーバー（社内ネットワーク）と、その管理者</td></tr>
+    <tr><td class="k">通信</td><td>Microsoft 365 への接続。新しい版の確認のため、GitHub（<code>github.com</code>）への接続も使います（確認は止められます）</td></tr>
+  </table>
+</section>
+
+<!-- 2 -->
+<section class="chap" id="c2">
+  <h2><span class="n">2</span>管理者の準備</h2>
+
+  <h3 id="c2-1"><span class="n">2.1</span>Microsoft 365 にアプリを登録する</h3>
+  <p>アプリが Outlook のメールを読み・送るために、Microsoft Entra ID にアプリを1つ登録します。<b>組織で1回だけ</b>行い、取得した2つの値を、各PCの設定に入れます。</p>
+  <ol class="steps">
+    <li>Microsoft Entra 管理センター（<code>entra.microsoft.com</code>）に、管理者でサインインし、「アプリの登録」→「新規登録」を開きます。</li>
+    <li>名前（例: 特退金脱退 処理漏れ防止）を入れ、サポートされるアカウントの種類は「この組織ディレクトリのみ」を選びます。</li>
+    <li>リダイレクト URI は、種類を<b>「パブリック クライアント／ネイティブ（モバイルとデスクトップ）」</b>にして、<code>http://localhost</code> と入れ、登録します。</li>
+    <li>登録後の「API のアクセス許可」→「アクセス許可の追加」→「Microsoft Graph」→<b>「委任されたアクセス許可」</b>で、次の2つを追加します。
+      <table>
+        <tr><th>権限</th><th>用途</th></tr>
+        <tr><td class="k"><code>Mail.Read</code></td><td>指定したフォルダのメールの読み取り</td></tr>
+        <tr><td class="k"><code>Mail.Send</code></td><td>管理職への警告メールと、保険会社への催促メールの送信（サインインした本人として送る）</td></tr>
+      </table></li>
+    <li>組織の設定で、利用者が自分で同意できないときは、「（組織名）に管理者の同意を与えます」を押して、同意します。</li>
+    <li>アプリの「概要」に出る<b>「ディレクトリ（テナント）ID」</b>と<b>「アプリケーション（クライアント）ID」</b>を控えます（<a href="#c4">4章</a>・<a href="#c5">5章</a>で、各PCに入れます）。</li>
+  </ol>
+  <div class="callout warn"><b class="t">権限の範囲に注意</b>どちらの権限も、サインインした利用者の<b>メールボックス全体</b>が対象になります（フォルダ単位では絞れません）。メールを読むのは、設定したフォルダだけですが、権限の範囲は、利用部門に説明して、了解を得てください。</div>
+  <p>Entra 管理センターの画面の名称は、変わることがあります。見つからないときは、Microsoft の最新の案内を確認してください。</p>
+
+  <h3 id="c2-2"><span class="n">2.2</span>Outlook のフォルダを用意する</h3>
+  <ul>
+    <li>案件メール（件名に「特退金脱退案件作成」「特退金制度申し込み」を含むもの）が入る<b>フォルダ</b>を、メールを読む人（担当者）の Outlook に作ります（例: 「特退金」）。</li>
+    <li>受信ルールで、案件メールをそのフォルダへ振り分けておきます。</li>
+    <li>このフォルダの名前を、アプリの設定の「Outlook のフォルダ名」に入れます。</li>
+  </ul>
+
+  <h3 id="c2-3"><span class="n">2.3</span>PostgreSQL を用意する（共有するとき）</h3>
+  <p>1台で使うときは、この節は飛ばします。共有するときは、サーバー管理者が、次を行います。</p>
+  <div class="callout"><b class="t">既存のデータベースとは分けてください</b>ほかのシステムが使っているデータベースには入れず、<b>特退金用の新しいデータベースと専用ユーザー</b>を作ります。表の名前が重なると、双方のデータを壊すおそれがあります。管理者（<code>postgres</code>）のユーザーを、アプリに使わせないでください。</div>
+  <ol class="steps">
+    <li>サーバーに、管理者で接続します（例: <code>psql -h サーバー名 -U postgres</code>）。</li>
+    <li>専用のユーザーと、空のデータベースを作ります（パスワードは、実際に決めた値に置き換えます）。
+      <pre style="background:#eef1f6;padding:10px 14px;border-radius:8px;overflow-x:auto"><code>CREATE ROLE tokutai_app WITH LOGIN PASSWORD '（決めたパスワード）';
+CREATE DATABASE tokutai OWNER tokutai_app ENCODING 'UTF8';</code></pre></li>
+    <li>各PCから、サーバーのポート（既定は <b>5432</b>）に接続できるようにします。サーバーの <code>pg_hba.conf</code> に、利用するPCのネットワークからの接続を許可する行を足し、設定を読み込み直します。
+      <pre style="background:#eef1f6;padding:10px 14px;border-radius:8px;overflow-x:auto"><code># 例: 社内ネットワーク 192.168.0.0/24 から、tokutai に、tokutai_app で接続を許可
+host  tokutai  tokutai_app  192.168.0.0/24  scram-sha-256</code></pre>
+      サーバーのファイアウォールで、ポート 5432 を、社内から開けておきます。</li>
+    <li>管理者が、次の4つの値を、利用者（各PCの設定をする人）に伝えます: <b>ホスト名（または IPアドレス）／ポート／データベース名（<code>tokutai</code>）／ユーザー名（<code>tokutai_app</code>）とパスワード</b>。</li>
+  </ol>
+  <ul>
+    <li><b>表は、アプリが最初の接続で自動で作ります。</b>管理者が表を作る必要はありません（そのため、ユーザーは、そのデータベースの所有者にします）。</li>
+    <li><b>バックアップは、サーバー側で取ります</b>（例: <code>pg_dump</code> を、毎日の予定で実行）。アプリは、共有の受付簿のバックアップを取りません。</li>
+  </ul>
+</section>
+
+<!-- 3 -->
+<section class="chap" id="c3">
+  <h2><span class="n">3</span>各PCにインストールする</h2>
+  <ol class="steps">
+    <li>GitHub の Release（<a href="https://github.com/mozu93/tokutaikin/releases" target="_blank" rel="noopener">https://github.com/mozu93/tokutaikin/releases</a>）から、最新の <code>TokutaiApp-Setup-&lt;版&gt;.exe</code> と、<code>TokutaiApp-Setup-&lt;版&gt;.exe.sha256</code> を取得します。</li>
+    <li><b>実行する前に、ファイルが本物か確かめます</b>（下の囲みを参照）。</li>
+    <li><code>TokutaiApp-Setup-&lt;版&gt;.exe</code> をダブルクリックし、画面の案内に従って進めます（言語は日本語です。管理者権限は要りません）。</li>
+    <li>「デスクトップにショートカットを作る」は、必要に応じて、チェックを入れます。</li>
+    <li>完了すると、アプリが起動します。起動したら、<a href="#c4">4章</a>（1台で使う）か、<a href="#c5">5章</a>（共有する）に進みます。</li>
+  </ol>
+  <div class="callout warn"><b class="t">実行する前に、ファイルが本物か確かめます</b>このインストーラーには、署名がないためです。
+    <ol style="margin:6px 0 0">
+      <li>取得は、必ず上の公式の Release から行います。</li>
+      <li>取得したフォルダで、PowerShell を開き、次を実行します（<code>&lt;版&gt;</code> は、実際の版に置き換えます）。<br>
+        <code>Get-FileHash .\TokutaiApp-Setup-&lt;版&gt;.exe -Algorithm SHA256</code></li>
+      <li>表示された値が、<code>.sha256</code> ファイルの値と<b>一致したときだけ</b>、実行します。一致しないときは、実行せず、管理者に相談してください。</li>
+      <li>値が一致したうえで、Windows の画面に「WindowsによってPCが保護されました」と出たときは、「<b>詳細情報</b>」を押し、「<b>実行</b>」を選びます。</li>
+    </ol></div>
+  <table>
+    <tr><th>項目</th><th>内容</th></tr>
+    <tr><td class="k">入る場所</td><td><code>%LOCALAPPDATA%\Programs\TokutaiApp</code>（利用者ごと。管理者権限は不要）</td></tr>
+    <tr><td class="k">ショートカット</td><td>スタートメニュー（と、選んだ場合はデスクトップ）</td></tr>
+    <tr><td class="k">自動起動</td><td>初回の起動で、Windows 起動時に自動で起動するよう登録されます（設定で切り替えられます）</td></tr>
+    <tr><td class="k">常駐</td><td>画面を閉じても、トレイ（画面右下）に常駐します。終了は、トレイのアイコンを右クリックして「終了」</td></tr>
+  </table>
+</section>
+
+<!-- 4 -->
+<section class="chap" id="c4">
+  <h2><span class="n">4</span>初期設定（1台で使うとき）</h2>
+  <p>受付簿は、そのPCに置きます（今までと同じです）。</p>
+  <ol class="steps">
+    <li>アプリの「<b>ファイル</b>」→「<b>設定</b>」を開きます。</li>
+    <li>「<b>接続</b>」に、<a href="#c2-1">2.1</a> で控えた<b>テナントID・クライアントID</b>と、<a href="#c2-2">2.2</a> の<b>Outlook のフォルダ名</b>を入れます。</li>
+    <li>「<b>通知</b>」に、警告メールを受け取る管理職の宛先を入れます（2名まで）。</li>
+    <li>「<b>接続テスト</b>」を押し、Microsoft にサインインします。「フォルダが見つかりました」と出れば成功です。</li>
+    <li>保存します。</li>
+  </ol>
+  <figure class="small"><img src="../manual/img/settings_1.png" alt="設定画面の上部。接続、判定、警告の欄" width="420"><figcaption>設定画面。「接続」に、テナントID・クライアントID・フォルダ名を入れます。</figcaption></figure>
+  <p>保険会社への催促メールを使うときは、宛先などを設定します（<a href="../manual/index.html#c6">操作マニュアル 6章</a>）。最初は、宛先を自分のアドレスにして試してください。</p>
+</section>
+
+<!-- 5 -->
+<section class="chap" id="c5">
+  <h2><span class="n">5</span>共有の設定（複数の職員で使うとき）</h2>
+  <p>先に、<a href="#c2-3">2.3</a> でデータベースを用意してください。次の設定を、<b>各PCで</b>行います。</p>
+
+  <h3><span class="n">5.1</span>接続先を設定する</h3>
+  <ol class="steps">
+    <li>アプリの「<b>ファイル</b>」→「<b>データの共有設定</b>」を開きます（はじめて起動するPCでは、起動時に、同じ画面が出ます）。</li>
+    <li>「複数の職員で共有する（PostgreSQL・社内サーバー）」を選び、管理者から聞いた<b>ホスト名・ポート・データベース名・ユーザー名・パスワード</b>を入れます。
+      <figure class="small"><img src="../manual/img/dialog_connection.png" alt="データの共有設定の画面" width="520"><figcaption>「データの共有設定」。パスワードは、このPCに暗号化して保存されます。</figcaption></figure></li>
+    <li>「<b>接続テスト</b>」で「接続できました」と出たら、「保存」を押します。<b>アプリが終了する</b>ので、もう一度起動します。</li>
+  </ol>
+  <div class="callout"><b class="t">今までの受付簿を引き継ぐときは、最初の1台だけ</b>今まで1台で使っていたPCでは、「このPCにある今までの受付簿を、共有のデータベースへ移す」に<b>チェックを入れて</b>保存します（案件・取り込み済みメール・通知履歴を写します）。共有側に案件がすでにあるときは、二重に移しません。<b>ほかのPCは、チェックを入れず</b>、接続だけ設定します。</div>
+
+  <h3><span class="n">5.2</span>職員を登録し、担当者を決める</h3>
+  <ol class="steps">
+    <li>起動すると、職員を選ぶ画面が出ます。最初の1人は、「職員を登録」で、自分の名前を追加します。
+      <figure class="small"><img src="../manual/img/dialog_staff_select.png" alt="職員を選ぶ画面" width="380"></figure></li>
+    <li>「ファイル」→「<b>職員の管理（担当者マーク）</b>」で、ほかの職員も登録できます。
+      <figure class="small"><img src="../manual/img/dialog_staff_manage.png" alt="職員の管理の画面。担当者と使用中のチェック" width="520"></figure></li>
+    <li><b>メールを読み込む人にだけ、「担当者」のチェック</b>を入れます。担当者のチェックがある職員だけが、メールの取り込み・管理職への警告メール・保険会社への催促メールを行います。</li>
+    <li><b>担当者のPCだけ</b>、「ファイル」→「設定」で、<a href="#c4">4章</a>と同じ「接続」（テナントID・クライアントID・フォルダ名）を入れ、「接続テスト」でサインインします。担当者ではない職員の設定画面には、「接続」は出ません。</li>
+  </ol>
+  <div class="callout warn"><b class="t">注意</b>
+    <ul style="margin:6px 0 0">
+      <li>職員の選択には<b>パスワードがありません</b>。担当者のチェックは、うっかり別の人がメールを読み込まないための印で、なりすましを防ぐものではありません。</li>
+      <li>担当者は<b>1人</b>にすることをお勧めします（複数人にすると、同時に更新が重なったとき、メールが重なることがあります）。</li>
+      <li>警告の日数・管理職の宛先などは、全員で共有され、1人が変えると全員に反映されます。</li>
+    </ul></div>
+  <p>共有の使い方の詳細は、<a href="../manual/index.html#c11">操作マニュアル 11章</a>を見てください。</p>
+</section>
+
+<!-- 6 -->
+<section class="chap" id="c6">
+  <h2><span class="n">6</span>動作の確認</h2>
+  <p>設定したら、次を確かめます。</p>
+  <table>
+    <tr><th>確認すること</th><th>期待する結果</th></tr>
+    <tr><td class="k">アプリが起動する</td><td>メイン画面が開き、トレイにアイコンが出る</td></tr>
+    <tr><td class="k">接続テスト（担当者のPC）</td><td>「フォルダが見つかりました」と出る</td></tr>
+    <tr><td class="k">メールの取り込み（担当者のPC）</td><td>「今すぐ更新」で、案件が一覧に入る。下の「最終更新」の時刻が変わる</td></tr>
+    <tr><td class="k">警告メール</td><td>最初は、管理職の宛先を<b>自分のアドレス</b>にして、期限を過ぎた案件があるときに、メールが届く</td></tr>
+    <tr><td class="k">共有（共有するとき）</td><td>別のPCで案件を記録し、もう1台で「最新の情報に更新」を押すと、記録が見える</td></tr>
+    <tr><td class="k">担当者以外の画面（共有するとき）</td><td>ボタンが「最新の情報に更新」になり、メールの取り込みはしない</td></tr>
+    <tr><td class="k">自動起動</td><td>Windows を再起動すると、アプリが自動で起動する</td></tr>
+  </table>
+  <div class="callout danger"><b class="t">本番の宛先に、試しのメールを送らないでください</b>警告メールと催促メールは、実際の宛先（管理職・保険会社）に届きます。確認が終わるまで、宛先は自分のアドレスにしておき、問題がなければ、本来の宛先に直します。</div>
+</section>
+
+<!-- 7 -->
+<section class="chap" id="c7">
+  <h2><span class="n">7</span>更新とアンインストール</h2>
+  <h3><span class="n">7.1</span>更新</h3>
+  <ul>
+    <li>新しい版が公開されると、アプリの画面上部に、青いバナーと「更新する」ボタンが出ます。<b>押したときだけ</b>更新します（SHA-256 が一致したインストーラーだけを実行します）。</li>
+    <li>更新しても、受付簿・設定・サインイン情報は、そのまま使えます。</li>
+    <li>共有しているときは、<b>全員が、同じ版</b>で使うのが安全です（共有に対応しているのは、v1.2.0 以降です）。新しい版が出たら、全員が更新してください。</li>
+    <li>更新の通知が不要なときは、設定の「新しい版を自動で確認する」を外します。この場合、更新は、Release から手で行います（<a href="#c3">3章</a>）。</li>
+  </ul>
+  <h3><span class="n">7.2</span>アンインストール</h3>
+  <ul>
+    <li>Windows の「設定」→「アプリ」→「インストールされているアプリ」から、「特退金脱退 処理漏れ防止」を削除します。</li>
+    <li><b>受付簿・設定は、削除しても残ります</b>（<code>%APPDATA%\TokutaiApp\</code>）。完全に消すときは、このフォルダも削除します。</li>
+    <li>共有の受付簿（サーバー上）は、アプリを削除しても、消えません。</li>
+  </ul>
+</section>
+
+<!-- 8 -->
+<section class="chap" id="c8">
+  <h2><span class="n">8</span>こんなときは</h2>
+  <table>
+    <tr><th>状況</th><th>対処</th></tr>
+    <tr><td class="k">インストーラーを実行すると、「WindowsによってPCが保護されました」と出る</td><td>署名がないための表示です。先に、SHA-256 が一致することを確かめ（<a href="#c3">3章</a>）、「詳細情報」→「実行」を選ぶ</td></tr>
+    <tr><td class="k">SHA-256 の値が一致しない</td><td>実行しない。公式の Release から、取得し直す。それでも一致しないときは、管理者に相談する</td></tr>
+    <tr><td class="k">接続テストで、サインインに失敗する／「管理者の承認が必要」と出る</td><td>権限（<code>Mail.Read</code>・<code>Mail.Send</code>）への管理者の同意が済んでいない。<a href="#c2-1">2.1</a> の手順で、管理者に同意してもらう</td></tr>
+    <tr><td class="k">接続テストで、「フォルダが見つかりません」と出る</td><td>Outlook のフォルダ名が、実際と違う。サインインしたアカウントに、そのフォルダがあるか確かめる（<a href="#c2-2">2.2</a>）</td></tr>
+    <tr><td class="k">データの共有設定で、「サーバーにつながりません」と出る</td><td>ホスト名・ポートが違う、サーバーが止まっている、ファイアウォールか <code>pg_hba.conf</code> で、このPCからの接続が許可されていない。管理者に確認する（<a href="#c2-3">2.3</a>）</td></tr>
+    <tr><td class="k">「ユーザー名またはパスワードが違います」と出る</td><td>ユーザー名（<code>tokutai_app</code>）とパスワードを、もう一度入れる。管理者に、パスワードを確かめてもらう</td></tr>
+    <tr><td class="k">「データベース名が違うか、データベースがまだ作られていません」と出る</td><td>データベース名を確かめる。作られていないときは、管理者に、<a href="#c2-3">2.3</a> の手順を依頼する</td></tr>
+    <tr><td class="k">共有を始めたら、今までの案件が見えない</td><td>移行のチェックを入れずに保存した可能性がある。元のPCで、「データの共有設定」を開き、移行にチェックを入れて保存し直す（共有側に案件がないときだけ移る）</td></tr>
+    <tr><td class="k">共有しているのに、メールが取り込まれない</td><td>自分が「担当者」か確かめる（ボタンが「今すぐ更新」なら担当者）。担当者のPCで、「接続」を設定し、サインインできているかも確かめる</td></tr>
+  </table>
+  <p>そのほかの対処は、<a href="../manual/index.html#c10">操作マニュアル 10章</a>を見てください。</p>
+</section>
+
+<!-- 9 -->
+<section class="chap" id="c9">
+  <h2><span class="n">9</span>付録（保存先・開発者向け）</h2>
+  <h3><span class="n">9.1</span>データの保存先</h3>
+  <p><code>%APPDATA%\TokutaiApp\</code>（環境変数 <code>TOKUTAI_HOME</code> で変更できます）</p>
+  <table>
+    <tr><th>ファイル</th><th>内容</th></tr>
+    <tr><td class="k"><code>tokutai.db</code></td><td>受付簿（1台で使うとき）</td></tr>
+    <tr><td class="k"><code>settings.json</code></td><td>設定（共有のときは、警告の日数・宛先などを除く）</td></tr>
+    <tr><td class="k"><code>connection.json</code></td><td>データベースの接続先（共有のとき。パスワードは入らない）</td></tr>
+    <tr><td class="k"><code>db_password.bin</code></td><td>共有のデータベースのパスワード（暗号化）</td></tr>
+    <tr><td class="k"><code>token_cache.bin</code></td><td>Microsoft のサインイン情報（暗号化。他人に渡さない）</td></tr>
+    <tr><td class="k"><code>backup\</code></td><td>日次バックアップ（1台で使うとき。30世代）</td></tr>
+    <tr><td class="k"><code>tokutai.log</code></td><td>ログ</td></tr>
+  </table>
+  <h3><span class="n">9.2</span>開発者向け（ソースから動かす・リリース）</h3>
+  <ul>
+    <li>ソースから動かす: Python 3.11 で、<code>pip install -r requirements.txt</code> のあと、<code>python main.py</code>。テストは <code>python -m pytest tests -q</code>。</li>
+    <li>リリース: <code>tokutai/__init__.py</code> の版と、<code>RELEASE_NOTES.md</code> を更新して、<code>vX.Y.Z</code> のタグを push すると、GitHub Actions が、テスト・インストーラー作成・SHA-256 作成・Release 公開を行います（タグと版が違うと失敗します）。</li>
+    <li>インストーラーを手元で作る: PyInstaller で <code>dist\TokutaiApp</code> を作り、<code>iscc /DAppVersion=&lt;版&gt; installer\TokutaiApp.iss</code>（Inno Setup 6）。</li>
+  </ul>
+  <footer>特退金脱退 処理漏れ防止アプリ v1.2.0 インストールマニュアル</footer>
+</section>
+</main>
+</div>
+<script>
+  // 画像をクリックすると、原寸で別のタブに開く
+  document.querySelectorAll('figure img').forEach(function (img) {
+    img.style.cursor = 'zoom-in';
+    img.title = 'クリックで原寸表示';
+    img.addEventListener('click', function () { window.open(img.src, '_blank'); });
+  });
+</script>
+</body>
+</html>

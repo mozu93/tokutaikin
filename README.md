@@ -8,6 +8,7 @@ Outlook に届く案件メールから受付簿を自動で作り、期限を過
 - 紹介: [`docs/introduction-slides.html`](docs/introduction-slides.html)（同僚向けの紹介スライド。ダウンロードしてブラウザで開く）
 - 使い方: `MANUAL.md`（操作マニュアル。アプリの「ヘルプ」→「使い方」でも開く）
 - 使い方（画面写真つき）: [`docs/manual/index.html`](docs/manual/index.html)（ダウンロードしてブラウザで開く。`docs/manual/img/` も一緒に置く）
+- 導入（管理者向け）: [`docs/install/index.html`](docs/install/index.html)（インストールマニュアル。Microsoft 365 への登録、PostgreSQL の用意、各PCへのインストールと設定。ダウンロードしてブラウザで開く。画像は `docs/manual/img/` を使うので、`docs` フォルダごと置く）
 - 仕様: `特退金脱退_処理漏れ防止アプリ_仕様書.html`
 
 ## 主な機能
