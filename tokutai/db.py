@@ -101,6 +101,21 @@ def _migrate(engine) -> None:
                 conn.exec_driver_sql(f"ALTER TABLE cases ADD COLUMN {name} DATE")
 
 
+def _fix_sequences(engine) -> None:
+    """PostgreSQL の自動採番（id）を、表の最大値に合わせる。
+
+    id を指定して行を写すと採番が進まず、次の追加が既存の id と重複するため。
+    """
+    if engine.dialect.name != "postgresql":
+        return
+    with engine.begin() as conn:
+        for table in ("notify_log", "staff"):
+            conn.exec_driver_sql(
+                f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
+                f"COALESCE((SELECT MAX(id) FROM {table}), 0) + 1, false)"
+            )
+
+
 def _engine_kwargs(url) -> dict:
     """PostgreSQL は、切れた接続を使い回さず、つながらないときは長く待たずに知らせる。"""
     if make_url(url).get_backend_name() == "postgresql":
@@ -119,6 +134,7 @@ def init(url=None, shared: bool | None = None) -> None:
     engine = create_engine(url, future=True, **_engine_kwargs(url))
     Base.metadata.create_all(engine)
     _migrate(engine)
+    _fix_sequences(engine)
     _engine = engine
     _shared = engine.dialect.name != "sqlite" if shared is None else shared
     _factory = sessionmaker(_engine, expire_on_commit=False)
@@ -147,6 +163,7 @@ def copy_local_to(dst_url, src_path=None) -> dict[str, int]:
                     b.add(model(**{c.name: getattr(r, c.name) for c in model.__table__.columns}))
                 counts[model.__tablename__] = len(rows)
             b.commit()
+            _fix_sequences(de)
             return counts
     finally:
         se.dispose()
